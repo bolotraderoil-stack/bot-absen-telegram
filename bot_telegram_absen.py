@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 TOKEN = os.getenv("8429562249:AAG5xo5IkAqtxnoG62-ocjDnyc3Jvq3u5cE")
-SUPABASE_URL = os.getenv("postgresql://postgres:Azizan0104@db.awvntmatecqendshveeh.supabase.co:5432/postgres")
+SUPABASE_URL = os.getenv("postgresql://postgres.awvntmatecqendshveeh:Azizan0104@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres")
 
 def get_db():
     return psycopg2.connect(SUPABASE_URL)
