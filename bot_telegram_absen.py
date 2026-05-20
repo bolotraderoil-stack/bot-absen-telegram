@@ -5,28 +5,8 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-TOKEN = os.getenv("8429562249:AAG5xo5IkAqtxnoG62-ocjDnyc3Jvq3u5cE")
-SUPABASE_URL = os.getenv("postgresql://postgres.awvntmatecqendshveeh:Azizan0104@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres")
-
 def get_db():
-    return psycopg2.connect(SUPABASE_URL)
-
-def init_db():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS absensi (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL,
-            nama TEXT,
-            tanggal DATE NOT NULL,
-            jam_datang TIME,
-            jam_pulang TIME,
-            UNIQUE(user_id, tanggal)
-        )
-    """)
-    conn.commit()
-    conn.close()
+    return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
 def cek_absen(user_id):
     conn = get_db()
@@ -48,6 +28,7 @@ def simpan_datang(user_id, nama):
         cur.execute("""
             INSERT INTO absensi (user_id, nama, tanggal, jam_datang)
             VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id, tanggal) DO NOTHING
         """, (user_id, nama, hari_ini, jam_sekarang))
         conn.commit()
         return True
@@ -137,14 +118,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(teks, parse_mode='Markdown')
 
 async def main():
-    print("TOKEN:", "ADA" if os.getenv("TOKEN") else "KOSONG")
-    print("SUPABASE_URL:", "ADA" if os.getenv("SUPABASE_URL") else "KOSONG")
-    
+    TOKEN = os.getenv("TOKEN")
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+
+    print("TOKEN:", "ADA" if TOKEN else "KOSONG")
+    print("SUPABASE_URL:", "ADA" if SUPABASE_URL else "KOSONG")
+
     if not TOKEN or not SUPABASE_URL:
         print("Error: TOKEN dan SUPABASE_URL harus diset di Environment Variables")
         return
 
-    init_db()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS absensi (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            nama TEXT,
+            tanggal DATE NOT NULL,
+            jam_datang TIME,
+            jam_pulang TIME,
+            UNIQUE(user_id, tanggal)
+        )
+    """)
+    conn.commit()
+    conn.close()
     print("Database siap")
 
     app = ApplicationBuilder().token(TOKEN).build()
