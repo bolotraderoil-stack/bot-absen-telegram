@@ -15,16 +15,34 @@ def home():
 def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
+def get_keyboard(status):
+    """status: 'belum', 'datang', 'selesai'"""
+    if status == 'belum':
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Datang", callback_data='datang'),
+             InlineKeyboardButton("🚪 Pulang", callback_data='pulang')]
+        ])
+    elif status == 'datang':
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚪 Pulang", callback_data='pulang')]
+        ])
+    else: # selesai
+        return None
+
 def cek_absen(user_id):
     conn = get_db()
     cur = conn.cursor()
     hari_ini = datetime.now().date()
-    cur.execute("SELECT * FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, hari_ini))
+    cur.execute("SELECT jam_datang, jam_pulang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, hari_ini))
     data = cur.fetchone()
     conn.close()
-    if data:
-        return {'jam_datang': data[4], 'jam_pulang': data[5]}
-    return None
+    if not data:
+        return 'belum'
+    if data[0] and not data[1]:
+        return 'datang'
+    if data[0] and data[1]:
+        return 'selesai'
+    return 'belum'
 
 def simpan_datang(user_id, nama):
     conn = get_db()
@@ -60,33 +78,19 @@ def simpan_pulang(user_id):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    data = cek_absen(user_id)
+    status = cek_absen(user_id)
     hari_ini = datetime.now().strftime('%d/%m/%Y')
-
-    if data and data['jam_datang'] and data['jam_pulang']:
-        await update.message.reply_text(
-            f"🤖 *Absen Selesai*\n📅 {hari_ini}\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"✅ Datang: {data['jam_datang']}\n"
-            f"🚪 Pulang: {data['jam_pulang']}\n\n"
-            f"Absensi hari ini sudah lengkap.",
-            parse_mode='Markdown'
-        )
-        return
-
-    keyboard = [
-        [InlineKeyboardButton("✅ Datang", callback_data='datang'),
-         InlineKeyboardButton("🚪 Pulang", callback_data='pulang')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    keyboard = get_keyboard(status)
 
     teks = f"🤖 *Absen*\n📅 {hari_ini}\n\n"
-    if data and data['jam_datang']:
-        teks += f"✅ Sudah datang: {data['jam_datang']}\n\nSilakan absen pulang"
-    else:
+    if status == 'belum':
         teks += "Waktunya absen datang"
+    elif status == 'datang':
+        teks += "✅ Sudah absen datang\nSilakan absen pulang"
+    else:
+        teks += "✅ Absensi hari ini sudah selesai"
 
-    await update.message.reply_text(teks, reply_markup=reply_markup, parse_mode='Markdown')
+    await update.message.reply_text(teks, reply_markup=keyboard, parse_mode='Markdown')
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -94,34 +98,38 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     nama = query.from_user.first_name
     button_id = query.data
-    data = cek_absen(user_id)
+    status = cek_absen(user_id)
 
     if button_id == 'datang':
-        if data and data['jam_datang']:
-            await query.edit_message_text("⚠️ Kamu sudah absen datang hari ini.")
+        if status!= 'belum':
+            await query.answer("Kamu sudah absen datang", show_alert=True)
             return
         if simpan_datang(user_id, nama):
             jam = datetime.now().strftime('%H:%M:%S')
-            await query.edit_message_text(f"✅ Absen datang berhasil!\nWaktu: {jam}")
+            await query.edit_message_text(
+                text=f"✅ Absen datang berhasil!\nWaktu: {jam}\n\nSilakan absen pulang",
+                reply_markup=get_keyboard('datang'),
+                parse_mode='Markdown'
+            )
         else:
-            await query.edit_message_text("❌ Gagal absen datang.")
+            await query.answer("Gagal absen datang", show_alert=True)
 
     elif button_id == 'pulang':
-        if not data or not data['jam_datang']:
-            await query.edit_message_text("❌ Kamu belum absen datang hari ini.")
-            return
-        if data['jam_pulang']:
-            await query.edit_message_text(f"⚠️ Kamu sudah absen pulang jam {data['jam_pulang']}")
+        if status!= 'datang':
+            await query.answer("Kamu belum absen datang", show_alert=True)
             return
         if simpan_pulang(user_id):
-            jam_pulang = datetime.now().strftime('%H:%M:%S')
-            jam_datang = data['jam_datang']
-            teks = f"🤖 *Absen Selesai*\n📅 {datetime.now().strftime('%d/%m/%Y')}\n"
-            teks += "━━━━━━━━━━━━━━\n"
-            teks += f"✅ Datang: {jam_datang}\n"
-            teks += f"🚪 Pulang: {jam_pulang}\n\n"
-            teks += "Absensi hari ini sudah lengkap. Sampai jumpa besok!"
-            await query.edit_message_text(teks, parse_mode='Markdown')
+            hari_ini = datetime.now().strftime('%d/%m/%Y')
+            await query.edit_message_text(
+                text=f"🤖 *Absen Selesai*\n📅 {hari_ini}\n"
+                     f"━━━━━━━━━━━━━━\n"
+                     f"✅ Absensi hari ini sudah selesai\n"
+                     f"Tombol akan muncul lagi besok jam 00:00",
+                parse_mode='Markdown',
+                reply_markup=None
+            )
+        else:
+            await query.answer("Gagal absen pulang", show_alert=True)
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -152,10 +160,8 @@ def main():
     conn.close()
     print("Database siap")
 
-    # Jalanin Flask di thread terpisah
     threading.Thread(target=run_flask, daemon=True).start()
 
-    # Jalanin bot di main thread
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
