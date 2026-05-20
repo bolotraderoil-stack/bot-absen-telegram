@@ -1,8 +1,16 @@
 import os
+import threading
 import psycopg2
 from datetime import datetime
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+
+app_flask = Flask(__name__)
+
+@app_flask.route('/')
+def home():
+    return "Bot jalan"
 
 def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
@@ -116,18 +124,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             teks += "Absensi hari ini sudah lengkap. Sampai jumpa besok!"
             await query.edit_message_text(teks, parse_mode='Markdown')
 
-def main():
+def run_bot():
     TOKEN = os.getenv("TOKEN")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
 
-    print("TOKEN:", "ADA" if TOKEN else "KOSONG")
-    print("SUPABASE_URL:", "ADA" if SUPABASE_URL else "KOSONG")
-
     if not TOKEN or not SUPABASE_URL:
-        print("Error: TOKEN dan SUPABASE_URL harus diset di Environment Variables")
+        print("Error: TOKEN dan SUPABASE_URL harus diset")
         return
 
-    # Buat tabel kalau belum ada
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -151,6 +155,13 @@ def main():
 
     print("Bot jalan...")
     app.run_polling()
+
+def main():
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+
+    port = int(os.environ.get("PORT", 10000))
+    app_flask.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     main()
