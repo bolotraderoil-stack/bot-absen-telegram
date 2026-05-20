@@ -137,6 +137,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(teks, parse_mode='Markdown')
 
 async def main():
+    print("TOKEN:", "ADA" if os.getenv("TOKEN") else "KOSONG")
+    print("SUPABASE_URL:", "ADA" if os.getenv("SUPABASE_URL") else "KOSONG")
+    
     if not TOKEN or not SUPABASE_URL:
         print("Error: TOKEN dan SUPABASE_URL harus diset di Environment Variables")
         return
