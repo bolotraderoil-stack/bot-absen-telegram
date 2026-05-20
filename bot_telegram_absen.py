@@ -2,11 +2,13 @@ import os
 import threading
 import psycopg2
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 app_flask = Flask(__name__)
+WIB = ZoneInfo("Asia/Jakarta")
 
 @app_flask.route('/')
 def home():
@@ -26,13 +28,13 @@ def get_keyboard(status):
         return InlineKeyboardMarkup([
             [InlineKeyboardButton("🚪 Pulang", callback_data='pulang')]
         ])
-    else: # selesai
+    else:
         return None
 
 def cek_absen(user_id):
     conn = get_db()
     cur = conn.cursor()
-    hari_ini = datetime.now().date()
+    hari_ini = datetime.now(WIB).date()
     cur.execute("SELECT jam_datang, jam_pulang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, hari_ini))
     data = cur.fetchone()
     conn.close()
@@ -47,8 +49,9 @@ def cek_absen(user_id):
 def simpan_datang(user_id, nama):
     conn = get_db()
     cur = conn.cursor()
-    hari_ini = datetime.now().date()
-    jam_sekarang = datetime.now().time()
+    wib = datetime.now(WIB)
+    hari_ini = wib.date()
+    jam_sekarang = wib.time()
     try:
         cur.execute("""
             INSERT INTO absensi (user_id, nama, tanggal, jam_datang)
@@ -57,7 +60,8 @@ def simpan_datang(user_id, nama):
         """, (user_id, nama, hari_ini, jam_sekarang))
         conn.commit()
         return True
-    except:
+    except Exception as e:
+        print("Error simpan_datang:", e)
         return False
     finally:
         conn.close()
@@ -65,8 +69,9 @@ def simpan_datang(user_id, nama):
 def simpan_pulang(user_id):
     conn = get_db()
     cur = conn.cursor()
-    hari_ini = datetime.now().date()
-    jam_sekarang = datetime.now().time()
+    wib = datetime.now(WIB)
+    hari_ini = wib.date()
+    jam_sekarang = wib.time()
     cur.execute("""
         UPDATE absensi SET jam_pulang=%s
         WHERE user_id=%s AND tanggal=%s AND jam_datang IS NOT NULL AND jam_pulang IS NULL
@@ -79,7 +84,7 @@ def simpan_pulang(user_id):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     status = cek_absen(user_id)
-    hari_ini = datetime.now().strftime('%d/%m/%Y')
+    hari_ini = datetime.now(WIB).strftime('%d/%m/%Y')
     keyboard = get_keyboard(status)
 
     teks = f"🤖 *Absen*\n📅 {hari_ini}\n\n"
@@ -88,7 +93,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif status == 'datang':
         teks += "✅ Sudah absen datang\nSilakan absen pulang"
     else:
-        teks += "✅ Absensi hari ini sudah selesai"
+        # Ambil jam datang & pulang buat ditampilin
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT jam_datang, jam_pulang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, datetime.now(WIB).date()))
+        data = cur.fetchone()
+        conn.close()
+        teks += f"✅ Datang: {data[0].strftime('%H:%M:%S')}\n"
+        teks += f"🚪 Pulang: {data[1].strftime('%H:%M:%S')}\n\n"
+        teks += "Absensi hari ini sudah selesai"
 
     await update.message.reply_text(teks, reply_markup=keyboard, parse_mode='Markdown')
 
@@ -99,13 +112,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nama = query.from_user.first_name
     button_id = query.data
     status = cek_absen(user_id)
+    wib = datetime.now(WIB)
+    jam = wib.strftime('%H:%M:%S')
+    hari_ini = wib.strftime('%d/%m/%Y')
 
     if button_id == 'datang':
         if status!= 'belum':
             await query.answer("Kamu sudah absen datang", show_alert=True)
             return
         if simpan_datang(user_id, nama):
-            jam = datetime.now().strftime('%H:%M:%S')
             await query.edit_message_text(
                 text=f"✅ Absen datang berhasil!\nWaktu: {jam}\n\nSilakan absen pulang",
                 reply_markup=get_keyboard('datang'),
@@ -119,12 +134,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Kamu belum absen datang", show_alert=True)
             return
         if simpan_pulang(user_id):
-            hari_ini = datetime.now().strftime('%d/%m/%Y')
+            # Ambil jam datang dari DB
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT jam_datang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, wib.date()))
+            jam_datang = cur.fetchone()[0]
+            conn.close()
+            jam_datang_str = jam_datang.strftime('%H:%M:%S')
+
             await query.edit_message_text(
                 text=f"🤖 *Absen Selesai*\n📅 {hari_ini}\n"
                      f"━━━━━━━━━━━━━━\n"
-                     f"✅ Absensi hari ini sudah selesai\n"
-                     f"Tombol akan muncul lagi besok jam 00:00",
+                     f"✅ Datang: {jam_datang_str}\n"
+                     f"🚪 Pulang: {jam}\n\n"
+                     f"Absensi hari ini sudah selesai\n"
+                     f"Tombol akan muncul lagi besok jam 00:00 WIB",
                 parse_mode='Markdown',
                 reply_markup=None
             )
