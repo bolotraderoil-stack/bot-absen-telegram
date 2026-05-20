@@ -93,7 +93,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif status == 'datang':
         teks += "✅ Sudah absen datang\nSilakan absen pulang"
     else:
-        # Ambil jam datang & pulang buat ditampilin
         conn = get_db()
         cur = conn.cursor()
         cur.execute("SELECT jam_datang, jam_pulang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, datetime.now(WIB).date()))
@@ -134,7 +133,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Kamu belum absen datang", show_alert=True)
             return
         if simpan_pulang(user_id):
-            # Ambil jam datang dari DB
             conn = get_db()
             cur = conn.cursor()
             cur.execute("SELECT jam_datang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, wib.date()))
@@ -191,7 +189,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("Bot jalan...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
     main()
