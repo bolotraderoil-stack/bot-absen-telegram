@@ -60,7 +60,6 @@ def simpan_pulang(user_id):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    nama = update.effective_user.first_name
     data = cek_absen(user_id)
     hari_ini = datetime.now().strftime('%d/%m/%Y')
 
@@ -124,7 +123,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             teks += "Absensi hari ini sudah lengkap. Sampai jumpa besok!"
             await query.edit_message_text(teks, parse_mode='Markdown')
 
-def run_bot():
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app_flask.run(host="0.0.0.0", port=port)
+
+def main():
     TOKEN = os.getenv("TOKEN")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
 
@@ -149,19 +152,16 @@ def run_bot():
     conn.close()
     print("Database siap")
 
+    # Jalanin Flask di thread terpisah
+    threading.Thread(target=run_flask, daemon=True).start()
+
+    # Jalanin bot di main thread
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("Bot jalan...")
     app.run_polling()
-
-def main():
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-
-    port = int(os.environ.get("PORT", 10000))
-    app_flask.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     main()
