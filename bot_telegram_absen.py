@@ -1,4 +1,3 @@
-import asyncio
 import os
 import psycopg2
 from datetime import datetime
@@ -117,7 +116,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             teks += "Absensi hari ini sudah lengkap. Sampai jumpa besok!"
             await query.edit_message_text(teks, parse_mode='Markdown')
 
-async def main():
+def main():
     TOKEN = os.getenv("TOKEN")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
 
@@ -128,6 +127,7 @@ async def main():
         print("Error: TOKEN dan SUPABASE_URL harus diset di Environment Variables")
         return
 
+    # Buat tabel kalau belum ada
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -150,7 +150,7 @@ async def main():
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("Bot jalan...")
-    await app.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
