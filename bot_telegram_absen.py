@@ -24,9 +24,7 @@ def home():
         data = cur.fetchall()
         conn.close()
     except Exception as e:
-        return f"<h2>Error konek DB:</h2><pre>{e}</pre><p>Cek SUPABASE_URL di Render Environment</p>"
-    
-    # ... sisa html tetep sama ...
+        return f"<h2>Error Koneksi DB</h2><pre>{e}</pre><p>Cek SUPABASE_URL di Render > Environment</p>", 500
 
     html = """
     <!DOCTYPE html>
@@ -42,7 +40,7 @@ def home():
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
             th { background: #4CAF50; color: white; }
             tr:hover { background: #f1f1f1; }
-           .filter { text-align: center; margin-bottom: 20px; }
+            .filter { text-align: center; margin-bottom: 20px; }
             input, button { padding: 8px; font-size: 16px; }
             @media (max-width: 600px) {
                 table, thead, tbody, th, td, tr { display: block; }
