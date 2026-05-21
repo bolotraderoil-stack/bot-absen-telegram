@@ -165,7 +165,7 @@ def get_keyboard(status):
         buttons.append([
             InlineKeyboardButton("📋 Saya", callback_data='saya'),
             InlineKeyboardButton("👥 Tim", callback_data='tim'),
-            InlineKeyboardButton("👑 Admin", callback_data='admin')
+            InlineKeyboardButton("⬇️ Download", callback_data='download')
         ])
 
     elif status == 'datang':
@@ -177,7 +177,7 @@ def get_keyboard(status):
         buttons.append([
             InlineKeyboardButton("📋 Saya", callback_data='saya'),
             InlineKeyboardButton("👥 Tim", callback_data='tim'),
-            InlineKeyboardButton("👑 Admin", callback_data='admin')
+            InlineKeyboardButton("⬇️ Download", callback_data='download')
         ])
 
     else:
@@ -185,6 +185,11 @@ def get_keyboard(status):
             InlineKeyboardButton("📊 Rekap", callback_data='rekap'),
             InlineKeyboardButton("📋 Saya", callback_data='saya'),
             InlineKeyboardButton("👥 Tim", callback_data='tim')
+        ])
+        buttons.append([
+            InlineKeyboardButton("⬇️ Download", callback_data='download'),
+            InlineKeyboardButton("👑 Admin", callback_data='admin'),
+            InlineKeyboardButton("❌", callback_data='noop')
         ])
 
     return InlineKeyboardMarkup(buttons)
@@ -341,7 +346,7 @@ async def rekap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hari_hadir, total_jam, total_telat = get_rekap_bulanan(user_id, bulan_str)
         bulan_nama = datetime.strptime(bulan_str, '%Y-%m').strftime('%B %Y') if bulan_str else datetime.now(WIB).strftime('%B %Y')
     except:
-        await update.message.reply_text("Format salah. Contoh: `/rekap 2025-10`", parse_mode='Markdown')
+        await update.message.reply_text("Format salah. Contoh: `/export 2025-10`", parse_mode='Markdown')
         return
 
     teks = f"📊 *Rekap {bulan_nama}*\n\n"
@@ -406,6 +411,10 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = cur.fetchall()
     conn.close()
+
+    if not data:
+        await update.message.reply_text("Tidak ada data untuk bulan ini.")
+        return
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -523,7 +532,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif button_id in ['izin', 'sakit', 'cuti']:
         context.user_data['status_izin'] = button_id
-        await query.edit_message_text(f"Kirim alasan {button_id}:")
+        await query.edit_message_text(f"Kirim alasan {status}:")
         return REASON
 
     elif button_id == 'rekap':
@@ -583,6 +592,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             teks += f"- {nama}\n"
         await query.edit_message_text(teks, parse_mode='Markdown')
 
+    elif button_id == 'download':
+        bulan_ini = datetime.now(WIB).strftime('%Y-%m')
+        await query.edit_message_text(
+            f"📥 Download data bulan ini: `/{'export'} {bulan_ini}`\n\n"
+            "Atau ketik manual: `/export YYYY-MM`\n"
+            "Contoh: `/export 2025-10`"
+        )
+
     elif button_id == 'admin':
         if user_id!= ADMIN_ID:
             await query.answer("Kamu bukan admin", show_alert=True)
@@ -611,6 +628,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id!= ADMIN_ID:
             return
         await query.edit_message_text("Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2025-12-25")
+
+    elif button_id == 'noop':
+        await query.answer()
 
 async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     alasan = update.message.text
