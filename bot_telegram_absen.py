@@ -61,7 +61,7 @@ def home():
             th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
             th {{ background: #4CAF50; color: white; }}
             tr:hover {{ background: #f1f1f1; }}
-          .filter {{ text-align: center; margin-bottom: 20px; }}
+           .filter {{ text-align: center; margin-bottom: 20px; }}
             input, button {{ padding: 8px; font-size: 16px; }}
             @media (max-width: 600px) {{
                 table, thead, tbody, th, td, tr {{ display: block; }}
@@ -122,17 +122,15 @@ def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
 def get_keyboard(status):
+    buttons = []
     if status == 'belum':
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Datang", callback_data='datang'),
-             InlineKeyboardButton("🚪 Pulang", callback_data='pulang')]
-        ])
+        buttons.append([InlineKeyboardButton("✅ Datang", callback_data='datang'),
+                        InlineKeyboardButton("🚪 Pulang", callback_data='pulang')])
     elif status == 'datang':
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚪 Pulang", callback_data='pulang')]
-        ])
-    else:
-        return None
+        buttons.append([InlineKeyboardButton("🚪 Pulang", callback_data='pulang')])
+
+    buttons.append([InlineKeyboardButton("📊 Rekap Bulan Ini", callback_data='rekap')])
+    return InlineKeyboardMarkup(buttons)
 
 def cek_absen(user_id):
     conn = get_db()
@@ -184,6 +182,30 @@ def simpan_pulang(user_id):
     conn.close()
     return updated
 
+def get_rekap_bulanan(user_id):
+    conn = get_db()
+    cur = conn.cursor()
+    now = datetime.now(WIB)
+    bulan = now.month
+    tahun = now.year
+
+    cur.execute("""
+        SELECT COUNT(*) as hari_hadir,
+               SUM(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600) as total_jam
+        FROM absensi
+        WHERE user_id=%s
+        AND EXTRACT(MONTH FROM tanggal) = %s
+        AND EXTRACT(YEAR FROM tanggal) = %s
+        AND jam_pulang IS NOT NULL
+    """, (user_id, bulan, tahun))
+
+    data = cur.fetchone()
+    conn.close()
+
+    hari_hadir = data[0] if data[0] else 0
+    total_jam = round(float(data[1]), 2) if data[1] else 0
+    return hari_hadir, total_jam
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     status = cek_absen(user_id)
@@ -206,6 +228,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         teks += "Absensi hari ini sudah selesai"
 
     await update.message.reply_text(teks, reply_markup=keyboard, parse_mode='Markdown')
+
+async def rekap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    hari_hadir, total_jam = get_rekap_bulanan(user_id)
+    bulan_nama = datetime.now(WIB).strftime('%B %Y')
+
+    teks = f"📊 *Rekap {bulan_nama}*\n\n"
+    teks += f"📅 Hari Hadir: {hari_hadir} hari\n"
+    teks += f"⏱️ Total Jam Kerja: {total_jam} jam\n"
+    teks += f"Rata-rata: {round(total_jam/hari_hadir, 2) if hari_hadir > 0 else 0} jam/hari"
+
+    await update.message.reply_text(teks, parse_mode='Markdown')
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -265,6 +299,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("Gagal absen pulang", show_alert=True)
 
+    elif button_id == 'rekap':
+        hari_hadir, total_jam = get_rekap_bulanan(user_id)
+        bulan_nama = datetime.now(WIB).strftime('%B %Y')
+
+        teks = f"📊 *Rekap {bulan_nama}*\n\n"
+        teks += f"📅 Hari Hadir: {hari_hadir} hari\n"
+        teks += f"⏱️ Total Jam Kerja: {total_jam} jam\n"
+        teks += f"Rata-rata: {round(total_jam/hari_hadir, 2) if hari_hadir > 0 else 0} jam/hari"
+
+        await query.edit_message_text(teks, parse_mode='Markdown')
+
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app_flask.run(host="0.0.0.0", port=port)
@@ -298,6 +343,7 @@ def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("rekap", rekap_command))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("Bot jalan...")
