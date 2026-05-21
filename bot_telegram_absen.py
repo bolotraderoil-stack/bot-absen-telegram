@@ -18,9 +18,29 @@ def home():
         cur = conn.cursor()
 
         if tanggal:
-            cur.execute("SELECT nama, tanggal, jam_datang, jam_pulang FROM absensi WHERE tanggal=%s ORDER BY jam_datang DESC", (tanggal,))
+            cur.execute("""
+                SELECT nama, tanggal, jam_datang, jam_pulang,
+                CASE
+                    WHEN jam_pulang IS NOT NULL
+                    THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
+                    ELSE NULL
+                END as total_jam
+                FROM absensi
+                WHERE tanggal=%s
+                ORDER BY jam_datang DESC
+            """, (tanggal,))
         else:
-            cur.execute("SELECT nama, tanggal, jam_datang, jam_pulang FROM absensi ORDER BY tanggal DESC, jam_datang DESC LIMIT 100")
+            cur.execute("""
+                SELECT nama, tanggal, jam_datang, jam_pulang,
+                CASE
+                    WHEN jam_pulang IS NOT NULL
+                    THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
+                    ELSE NULL
+                END as total_jam
+                FROM absensi
+                ORDER BY tanggal DESC, jam_datang DESC
+                LIMIT 100
+            """)
 
         data = cur.fetchall()
         conn.close()
@@ -41,7 +61,7 @@ def home():
             th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
             th {{ background: #4CAF50; color: white; }}
             tr:hover {{ background: #f1f1f1; }}
-           .filter {{ text-align: center; margin-bottom: 20px; }}
+          .filter {{ text-align: center; margin-bottom: 20px; }}
             input, button {{ padding: 8px; font-size: 16px; }}
             @media (max-width: 600px) {{
                 table, thead, tbody, th, td, tr {{ display: block; }}
@@ -72,19 +92,21 @@ def home():
                     <th>Tanggal</th>
                     <th>Jam Datang</th>
                     <th>Jam Pulang</th>
+                    <th>Total Jam</th>
                 </tr>
             </thead>
             <tbody>
     """.format(tgl=tanggal if tanggal else "")
 
     for row in data:
-        nama, tanggal, datang, pulang = row
+        nama, tanggal, datang, pulang, total_jam = row
         html += f"""
         <tr>
             <td data-label="Nama">{nama}</td>
             <td data-label="Tanggal">{tanggal}</td>
             <td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td>
             <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
+            <td data-label="Total Jam">{total_jam if total_jam else '-'}</td>
         </tr>
         """
 
@@ -216,18 +238,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if simpan_pulang(user_id):
             conn = get_db()
             cur = conn.cursor()
-            cur.execute("SELECT jam_datang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, wib.date()))
-            jam_datang = cur.fetchone()[0]
+            cur.execute("""
+                SELECT jam_datang, jam_pulang,
+                ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2) as total_jam
+                FROM absensi
+                WHERE user_id=%s AND tanggal=%s
+            """, (user_id, wib.date()))
+            data = cur.fetchone()
             conn.close()
-            jam_datang_str = jam_datang.strftime('%H:%M:%S')
+
+            jam_datang_str = data[0].strftime('%H:%M:%S')
+            jam_pulang_str = data[1].strftime('%H:%M:%S')
+            total_jam = data[2]
 
             await query.edit_message_text(
                 text=f"🤖 *Absen Selesai*\n📅 {hari_ini}\n"
                      f"━━━━━━━━━━━━━━\n"
                      f"✅ Datang: {jam_datang_str}\n"
-                     f"🚪 Pulang: {jam}\n\n"
-                     f"Absensi hari ini sudah selesai\n"
-                     f"Tombol akan muncul lagi besok jam 00:00 WIB",
+                     f"🚪 Pulang: {jam_pulang_str}\n"
+                     f"⏱️ Total Jam Kerja: {total_jam} jam\n"
+                     f"Absen hari ini sudah selesai terimakasih\n"
+                     f"**Tetap semangat**",
                 parse_mode='Markdown',
                 reply_markup=None
             )
