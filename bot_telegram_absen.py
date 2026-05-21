@@ -12,10 +12,6 @@ WIB = ZoneInfo("Asia/Jakarta")
 
 @app_flask.route('/')
 def home():
-    return "Bot jalan. Buka /absensi untuk lihat data."
-
-@app_flask.route('/absensi')
-def absensi_page():
     tanggal = request.args.get('tanggal')
 
     conn = get_db()
@@ -64,7 +60,7 @@ def absensi_page():
             <form method="get">
                 <input type="date" name="tanggal" value="{tgl}">
                 <button type="submit">Filter</button>
-                <a href="/absensi"><button type="button">Reset</button></a>
+                <a href="/"><button type="button">Reset</button></a>
             </form>
         </div>
         <table>
