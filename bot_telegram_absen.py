@@ -9,6 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 
 app_flask = Flask(__name__)
 WIB = ZoneInfo("Asia/Jakarta")
+
 @app_flask.route('/')
 def home():
     try:
@@ -24,7 +25,7 @@ def home():
         data = cur.fetchall()
         conn.close()
     except Exception as e:
-        return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
+        return f"<h2>Error Koneksi DB</h2><pre>{e}</pre><p>Cek SUPABASE_URL di Render > Environment</p>", 500
 
     html = """
     <!DOCTYPE html>
@@ -40,7 +41,7 @@ def home():
             th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
             th {{ background: #4CAF50; color: white; }}
             tr:hover {{ background: #f1f1f1; }}
-            .filter {{ text-align: center; margin-bottom: 20px; }}
+           .filter {{ text-align: center; margin-bottom: 20px; }}
             input, button {{ padding: 8px; font-size: 16px; }}
             @media (max-width: 600px) {{
                 table, thead, tbody, th, td, tr {{ display: block; }}
@@ -84,7 +85,16 @@ def home():
             <td data-label="Tanggal">{tanggal}</td>
             <td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td>
             <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
-       
+        </tr>
+        """
+
+    html += """
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+    return html
 
 def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
