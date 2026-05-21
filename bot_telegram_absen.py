@@ -544,10 +544,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Belum ada data absen 7 hari terakhir.")
             return
         teks = "*📋 Absen 7 Hari Terakhir*\n\n"
-        for row in data:
-            tanggal, datang, pulang, status, alasan, total_jam = row
-            status_text = status or 'hadir'
-            teks += f"*{tanggal}*\n"
-            teks += f"Datang: {datang.strftime('%H:%M') if datang else '-'}\n"
-            teks += f"Pulang: {pulang.strftime('%H:%M') if pulang else '-'}\n"
-            teks += f"Status: {status_text}\n"
+for row in data:
+    tanggal, datang, pulang, status, alasan, total_jam = row
+    status_text = status or 'hadir'
+    teks += f"*{tanggal}*\n"
+    teks += f"Datang: {datang.strftime('%H:%M') if datang else '-'}\n"
+    teks += f"Pulang: {pulang.strftime('%H:%M') if pulang else '-'}\n"
+    teks += f"Status: {status_text}\n"  # <- ini yang bener
+    if alasan:
+        teks += f"Alasan: {alasan}\n"
+    if total_jam:
+        teks += f"Total: {total_jam} jam\n"
+    teks += "\n"
