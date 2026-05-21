@@ -9,21 +9,24 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 
 app_flask = Flask(__name__)
 WIB = ZoneInfo("Asia/Jakarta")
-
 @app_flask.route('/')
 def home():
-    tanggal = request.args.get('tanggal')
+    try:
+        tanggal = request.args.get('tanggal')
+        conn = get_db()
+        cur = conn.cursor()
 
-    conn = get_db()
-    cur = conn.cursor()
+        if tanggal:
+            cur.execute("SELECT nama, tanggal, jam_datang, jam_pulang FROM absensi WHERE tanggal=%s ORDER BY jam_datang DESC", (tanggal,))
+        else:
+            cur.execute("SELECT nama, tanggal, jam_datang, jam_pulang FROM absensi ORDER BY tanggal DESC, jam_datang DESC LIMIT 100")
 
-    if tanggal:
-        cur.execute("SELECT nama, tanggal, jam_datang, jam_pulang FROM absensi WHERE tanggal=%s ORDER BY jam_datang DESC", (tanggal,))
-    else:
-        cur.execute("SELECT nama, tanggal, jam_datang, jam_pulang FROM absensi ORDER BY tanggal DESC, jam_datang DESC LIMIT 100")
-
-    data = cur.fetchall()
-    conn.close()
+        data = cur.fetchall()
+        conn.close()
+    except Exception as e:
+        return f"<h2>Error konek DB:</h2><pre>{e}</pre><p>Cek SUPABASE_URL di Render Environment</p>"
+    
+    # ... sisa html tetep sama ...
 
     html = """
     <!DOCTYPE html>
