@@ -550,4 +550,4 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             teks += f"*{tanggal}*\n"
             teks += f"Datang: {datang.strftime('%H:%M') if datang else '-'}\n"
             teks += f"Pulang: {pulang.strftime('%H:%M') if pulang else '-'}\n"
-            teks += f"Status: {status_tex
+            teks += f"Status: {status_text}\n"
