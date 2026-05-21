@@ -72,11 +72,11 @@ def home():
                 th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background: #4CAF50; color: white; }}
                 tr:hover {{ background: #f1f1f1; }}
-              .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-              .status-izin {{ color: orange; }}
-              .status-sakit {{ color: red; }}
-              .status-cuti {{ color: blue; }}
-              .filter {{ text-align: center; margin-bottom: 20px; }}
+             .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+             .status-izin {{ color: orange; }}
+             .status-sakit {{ color: red; }}
+             .status-cuti {{ color: blue; }}
+             .filter {{ text-align: center; margin-bottom: 20px; }}
                 input, button {{ padding: 8px; font-size: 16px; }}
                 @media (max-width: 600px) {{
                     table, thead, tbody, th, td, tr {{ display: block; }}
@@ -151,46 +151,31 @@ def is_libur(tanggal):
 def get_keyboard(status):
     buttons = []
 
+    # Baris 1: tombol absen harian, muncul sesuai status
     if status == 'belum':
         buttons.append([
             InlineKeyboardButton("✅ Datang", callback_data='datang'),
             InlineKeyboardButton("🚪 Pulang", callback_data='pulang'),
             InlineKeyboardButton("📝 Izin", callback_data='izin')
         ])
-        buttons.append([
-            InlineKeyboardButton("🤒 Sakit", callback_data='sakit'),
-            InlineKeyboardButton("🏖️ Cuti", callback_data='cuti'),
-            InlineKeyboardButton("📊 Rekap", callback_data='rekap')
-        ])
-        buttons.append([
-            InlineKeyboardButton("📋 Saya", callback_data='saya'),
-            InlineKeyboardButton("👥 Tim", callback_data='tim'),
-            InlineKeyboardButton("⬇️ Download", callback_data='download')
-        ])
-
     elif status == 'datang':
         buttons.append([
             InlineKeyboardButton("🚪 Pulang", callback_data='pulang'),
             InlineKeyboardButton("📝 Izin", callback_data='izin'),
-            InlineKeyboardButton("📊 Rekap", callback_data='rekap')
-        ])
-        buttons.append([
-            InlineKeyboardButton("📋 Saya", callback_data='saya'),
-            InlineKeyboardButton("👥 Tim", callback_data='tim'),
-            InlineKeyboardButton("⬇️ Download", callback_data='download')
+            InlineKeyboardButton("🤒 Sakit", callback_data='sakit')
         ])
 
-    else:
-        buttons.append([
-            InlineKeyboardButton("📊 Rekap", callback_data='rekap'),
-            InlineKeyboardButton("📋 Saya", callback_data='saya'),
-            InlineKeyboardButton("👥 Tim", callback_data='tim')
-        ])
-        buttons.append([
-            InlineKeyboardButton("⬇️ Download", callback_data='download'),
-            InlineKeyboardButton("👑 Admin", callback_data='admin'),
-            InlineKeyboardButton("❌", callback_data='noop')
-        ])
+    # Baris 2 & 3: selalu muncul
+    buttons.append([
+        InlineKeyboardButton("📊 Rekap", callback_data='rekap'),
+        InlineKeyboardButton("📋 Saya", callback_data='saya'),
+        InlineKeyboardButton("👥 Tim", callback_data='tim')
+    ])
+    buttons.append([
+        InlineKeyboardButton("⬇️ Download", callback_data='download'),
+        InlineKeyboardButton("👑 Admin", callback_data='admin'),
+        InlineKeyboardButton("❌", callback_data='noop')
+    ])
 
     return InlineKeyboardMarkup(buttons)
 
@@ -355,14 +340,14 @@ async def rekap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teks += f"⚠️ Telat: {total_telat} kali\n"
     teks += f"Rata-rata: {round(total_jam/hari_hadir, 2) if hari_hadir > 0 else 0} jam/hari"
 
-    await update.message.reply_text(teks, parse_mode='Markdown')
+    await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
 
 async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     data = get_data_saya(user_id)
 
     if not data:
-        await update.message.reply_text("Belum ada data absen 7 hari terakhir.")
+        await update.message.reply_text("Belum ada data absen 7 hari terakhir.", reply_markup=get_keyboard(cek_absen(user_id)))
         return
 
     teks = "*📋 Absen 7 Hari Terakhir*\n\n"
@@ -379,18 +364,18 @@ async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             teks += f"Total: {total_jam} jam\n"
         teks += "\n"
 
-    await update.message.reply_text(teks, parse_mode='Markdown')
+    await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
 
 async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if len(context.args)!= 1:
-        await update.message.reply_text("Format: `/export 2025-10`", parse_mode='Markdown')
+        await update.message.reply_text("Format: `/export 2025-10`", parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
         return
 
     try:
         tahun, bulan = map(int, context.args[0].split('-'))
     except:
-        await update.message.reply_text("Format salah. Contoh: `/export 2025-10`")
+        await update.message.reply_text("Format salah. Contoh: `/export 2025-10`", reply_markup=get_keyboard(cek_absen(user_id)))
         return
 
     conn = get_db()
@@ -413,7 +398,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not data:
-        await update.message.reply_text("Tidak ada data untuk bulan ini.")
+        await update.message.reply_text("Tidak ada data untuk bulan ini.", reply_markup=get_keyboard(cek_absen(user_id)))
         return
 
     output = io.StringIO()
@@ -427,6 +412,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         document=InputFile(io.BytesIO(output.getvalue().encode()), filename=f"absen_{context.args[0]}.csv"),
         caption="📄 Data absen bulan ini"
     )
+    await update.message.reply_text("Selesai", reply_markup=get_keyboard(cek_absen(user_id)))
 
 async def tim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_db()
@@ -459,16 +445,17 @@ async def tim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for nama, in belum:
         teks += f"- {nama}\n"
 
-    await update.message.reply_text(teks, parse_mode='Markdown')
+    await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id!= ADMIN_ID:
-        await update.message.reply_text("❌ Kamu bukan admin.")
+        await update.message.reply_text("❌ Kamu bukan admin.", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
         return
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📋 Belum Absen Hari Ini", callback_data='admin_belum')],
-        [InlineKeyboardButton("📅 Tambah Libur", callback_data='admin_libur')]
+        [InlineKeyboardButton("📅 Tambah Libur", callback_data='admin_libur')],
+        [InlineKeyboardButton("❌ Tutup", callback_data='noop')]
     ])
     await update.message.reply_text("👑 *Admin Panel*", reply_markup=keyboard, parse_mode='Markdown')
 
@@ -527,12 +514,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                      f"Absen hari ini sudah selesai terimakasih\n"
                      f"**Tetap semangat**",
                 parse_mode='Markdown',
-                reply_markup=None
+                reply_markup=get_keyboard('selesai')
             )
 
     elif button_id in ['izin', 'sakit', 'cuti']:
         context.user_data['status_izin'] = button_id
-        await query.edit_message_text(f"Kirim alasan {status}:")
+        await query.edit_message_text(f"Kirim alasan {button_id}:", reply_markup=get_keyboard(status))
         return REASON
 
     elif button_id == 'rekap':
@@ -543,12 +530,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         teks += f"⏱️ Total Jam Kerja: {total_jam} jam\n"
         teks += f"⚠️ Telat: {total_telat} kali\n"
         teks += f"Rata-rata: {round(total_jam/hari_hadir, 2) if hari_hadir > 0 else 0} jam/hari"
-        await query.edit_message_text(teks, parse_mode='Markdown')
+        await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
     elif button_id == 'saya':
         data = get_data_saya(user_id)
         if not data:
-            await query.edit_message_text("Belum ada data absen 7 hari terakhir.")
+            await query.edit_message_text("Belum ada data absen 7 hari terakhir.", reply_markup=get_keyboard(status))
             return
         teks = "*📋 Absen 7 Hari Terakhir*\n\n"
         for row in data:
@@ -563,7 +550,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if total_jam:
                 teks += f"Total: {total_jam} jam\n"
             teks += "\n"
-        await query.edit_message_text(teks, parse_mode='Markdown')
+        await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
     elif button_id == 'tim':
         conn = get_db()
@@ -590,14 +577,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         teks += f"\n❌ *Belum Absen ({len(belum)} orang):*\n"
         for nama, in belum:
             teks += f"- {nama}\n"
-        await query.edit_message_text(teks, parse_mode='Markdown')
+        await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
     elif button_id == 'download':
         bulan_ini = datetime.now(WIB).strftime('%Y-%m')
         await query.edit_message_text(
             f"📥 Download data bulan ini: `/{'export'} {bulan_ini}`\n\n"
             "Atau ketik manual: `/export YYYY-MM`\n"
-            "Contoh: `/export 2025-10`"
+            "Contoh: `/export 2025-10`",
+            reply_markup=get_keyboard(status)
         )
 
     elif button_id == 'admin':
@@ -606,7 +594,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📋 Belum Absen Hari Ini", callback_data='admin_belum')],
-            [InlineKeyboardButton("📅 Tambah Libur", callback_data='admin_libur')]
+            [InlineKeyboardButton("📅 Tambah Libur", callback_data='admin_libur')],
+            [InlineKeyboardButton("❌ Tutup", callback_data='noop')]
         ])
         await query.edit_message_text("👑 *Admin Panel*", reply_markup=keyboard, parse_mode='Markdown')
 
@@ -622,15 +611,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         teks = "❌ *Belum Absen Hari Ini:*\n"
         for nama, in belum:
             teks += f"- {nama}\n"
-        await query.edit_message_text(teks, parse_mode='Markdown')
+        await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
     elif button_id == 'admin_libur':
         if user_id!= ADMIN_ID:
             return
-        await query.edit_message_text("Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2025-12-25")
+        await query.edit_message_text("Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2025-12-25", reply_markup=get_keyboard(status))
 
     elif button_id == 'noop':
         await query.answer()
+        await query.edit_message_text("Menu ditutup. Ketik /start untuk buka lagi.", reply_markup=None)
 
 async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     alasan = update.message.text
@@ -640,7 +630,7 @@ async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         nama = update.effective_user.first_name
         simpan_izin(user_id, nama, status, alasan)
-        await update.message.reply_text(f"✅ Status {status} berhasil disimpan.\nAlasan: {alasan}")
+        await update.message.reply_text(f"✅ Status {status} berhasil disimpan.\nAlasan: {alasan}", reply_markup=get_keyboard(cek_absen(user_id)))
         return ConversationHandler.END
 
     if update.effective_user.id == ADMIN_ID:
@@ -651,9 +641,9 @@ async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cur.execute("INSERT INTO libur_nasional (tanggal) VALUES (%s) ON CONFLICT DO NOTHING", (tanggal,))
             conn.commit()
             conn.close()
-            await update.message.reply_text(f"✅ Tanggal {tanggal} ditandai sebagai libur nasional")
+            await update.message.reply_text(f"✅ Tanggal {tanggal} ditandai sebagai libur nasional", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
         except:
-            await update.message.reply_text("Format salah. Gunakan YYYY-MM-DD")
+            await update.message.reply_text("Format salah. Gunakan YYYY-MM-DD", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
 
     return ConversationHandler.END
 
@@ -690,6 +680,7 @@ def main():
             tanggal DATE PRIMARY KEY
         )
     """)
+    cur.execute("ALTER TABLE absensi ADD COLUMN IF NOT EXISTS alasan TEXT")
     conn.commit()
     conn.close()
     print("Database siap")
