@@ -19,7 +19,7 @@ def home():
 
         if tanggal:
             cur.execute("""
-                SELECT nama, tanggal, jam_datang, jam_pulang,
+                SELECT nama, tanggal, jam_datang, jam_pulang, status,
                 CASE
                     WHEN jam_pulang IS NOT NULL
                     THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
@@ -27,25 +27,25 @@ def home():
                 END as total_jam
                 FROM absensi
                 WHERE tanggal=%s
-                ORDER BY jam_datang DESC
+                ORDER BY jam_datang DESC NULLS LAST
             """, (tanggal,))
         else:
             cur.execute("""
-                SELECT nama, tanggal, jam_datang, jam_pulang,
+                SELECT nama, tanggal, jam_datang, jam_pulang, status,
                 CASE
                     WHEN jam_pulang IS NOT NULL
                     THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
                     ELSE NULL
                 END as total_jam
                 FROM absensi
-                ORDER BY tanggal DESC, jam_datang DESC
+                ORDER BY tanggal DESC, jam_datang DESC NULLS LAST
                 LIMIT 100
             """)
 
         data = cur.fetchall()
         conn.close()
     except Exception as e:
-        return f"<h2>Error Koneksi DB</h2><pre>{e}</pre><p>Cek SUPABASE_URL di Render > Environment</p>", 500
+        return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
     html = """
     <!DOCTYPE html>
@@ -55,25 +55,28 @@ def home():
         <title>Data Absensi</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            body {{ font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }}
-            h2 {{ text-align: center; }}
-            table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
-            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-            th {{ background: #4CAF50; color: white; }}
-            tr:hover {{ background: #f1f1f1; }}
-          .filter {{ text-align: center; margin-bottom: 20px; }}
-            input, button {{ padding: 8px; font-size: 16px; }}
-            @media (max-width: 600px) {{
-                table, thead, tbody, th, td, tr {{ display: block; }}
-                th {{ display: none; }}
-                td {{ border: none; position: relative; padding-left: 50%; }}
-                td:before {{
+            body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+            h2 { text-align: center; }
+            table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #4CAF50; color: white; }
+            tr:hover { background: #f1f1f1; }
+           .filter { text-align: center; margin-bottom: 20px; }
+            input, button { padding: 8px; font-size: 16px; }
+           .status-izin { color: orange; font-weight: bold; }
+           .status-sakit { color: red; font-weight: bold; }
+           .status-cuti { color: blue; font-weight: bold; }
+            @media (max-width: 600px) {
+                table, thead, tbody, th, td, tr { display: block; }
+                th { display: none; }
+                td { border: none; position: relative; padding-left: 50%; }
+                td:before {
                     content: attr(data-label);
                     position: absolute;
                     left: 10px;
                     font-weight: bold;
-                }}
-            }}
+                }
+            }
         </style>
     </head>
     <body>
@@ -92,6 +95,7 @@ def home():
                     <th>Tanggal</th>
                     <th>Jam Datang</th>
                     <th>Jam Pulang</th>
+                    <th>Status</th>
                     <th>Total Jam</th>
                 </tr>
             </thead>
@@ -99,13 +103,16 @@ def home():
     """.format(tgl=tanggal if tanggal else "")
 
     for row in data:
-        nama, tanggal, datang, pulang, total_jam = row
+        nama, tanggal, datang, pulang, status, total_jam = row
+        status_class = f"status-{status}" if status!= 'hadir' else ""
+        status_text = status.capitalize()
         html += f"""
         <tr>
             <td data-label="Nama">{nama}</td>
             <td data-label="Tanggal">{tanggal}</td>
             <td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td>
             <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
+            <td data-label="Status" class="{status_class}">{status_text}</td>
             <td data-label="Total Jam">{total_jam if total_jam else '-'}</td>
         </tr>
         """
@@ -122,27 +129,39 @@ def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
 def get_keyboard(status):
+    buttons = []
+
     if status == 'belum':
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Datang", callback_data='datang'),
-             InlineKeyboardButton("🚪 Pulang", callback_data='pulang')]
+        buttons.append([
+            InlineKeyboardButton("✅ Datang", callback_data='datang'),
+            InlineKeyboardButton("🚪 Pulang", callback_data='pulang')
         ])
     elif status == 'datang':
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚪 Pulang", callback_data='pulang')]
-        ])
-    else:
-        return None
+        buttons.append([InlineKeyboardButton("🚪 Pulang", callback_data='pulang')])
+
+    buttons.append([
+        InlineKeyboardButton("📊 Rekap", callback_data='rekap'),
+        InlineKeyboardButton("👤 Data Saya", callback_data='saya')
+    ])
+    buttons.append([
+        InlineKeyboardButton("📝 Izin", callback_data='izin'),
+        InlineKeyboardButton("🤒 Sakit", callback_data='sakit'),
+        InlineKeyboardButton("🏖️ Cuti", callback_data='cuti')
+    ])
+
+    return InlineKeyboardMarkup(buttons)
 
 def cek_absen(user_id):
     conn = get_db()
     cur = conn.cursor()
     hari_ini = datetime.now(WIB).date()
-    cur.execute("SELECT jam_datang, jam_pulang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, hari_ini))
+    cur.execute("SELECT jam_datang, jam_pulang, status FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, hari_ini))
     data = cur.fetchone()
     conn.close()
     if not data:
         return 'belum'
+    if data[2] in ['izin', 'sakit', 'cuti']:
+        return 'selesai'
     if data[0] and not data[1]:
         return 'datang'
     if data[0] and data[1]:
@@ -157,8 +176,8 @@ def simpan_datang(user_id, nama):
     jam_sekarang = wib.time()
     try:
         cur.execute("""
-            INSERT INTO absensi (user_id, nama, tanggal, jam_datang)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO absensi (user_id, nama, tanggal, jam_datang, status)
+            VALUES (%s, %s, %s, %s, 'hadir')
             ON CONFLICT (user_id, tanggal) DO NOTHING
         """, (user_id, nama, hari_ini, jam_sekarang))
         conn.commit()
@@ -184,6 +203,20 @@ def simpan_pulang(user_id):
     conn.close()
     return updated
 
+def simpan_status(user_id, nama, status):
+    conn = get_db()
+    cur = conn.cursor()
+    hari_ini = datetime.now(WIB).date()
+    cur.execute("""
+        INSERT INTO absensi (user_id, nama, tanggal, status)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (user_id, tanggal) DO UPDATE
+        SET status = %s, jam_datang = NULL, jam_pulang = NULL
+    """, (user_id, nama, hari_ini, status, status))
+    conn.commit()
+    conn.close()
+    return True
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     status = cek_absen(user_id)
@@ -192,18 +225,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     teks = f"🤖 *Absen*\n📅 {hari_ini}\n\n"
     if status == 'belum':
-        teks += "Waktunya absen datang"
+        teks += "Pilih menu absen di bawah"
     elif status == 'datang':
         teks += "✅ Sudah absen datang\nSilakan absen pulang"
     else:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT jam_datang, jam_pulang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, datetime.now(WIB).date()))
+        cur.execute("SELECT jam_datang, jam_pulang, status FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, datetime.now(WIB).date()))
         data = cur.fetchone()
         conn.close()
-        teks += f"✅ Datang: {data[0].strftime('%H:%M:%S')}\n"
-        teks += f"🚪 Pulang: {data[1].strftime('%H:%M:%S')}\n\n"
-        teks += "Absensi hari ini sudah selesai"
+        if data[2] in ['izin', 'sakit', 'cuti']:
+            teks += f"Status hari ini: *{data[2].capitalize()}*"
+        else:
+            teks += f"✅ Datang: {data[0].strftime('%H:%M:%S')}\n"
+            teks += f"🚪 Pulang: {data[1].strftime('%H:%M:%S')}\n\n"
+            teks += "Absensi hari ini sudah selesai"
 
     await update.message.reply_text(teks, reply_markup=keyboard, parse_mode='Markdown')
 
@@ -218,7 +254,78 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     jam = wib.strftime('%H:%M:%S')
     hari_ini = wib.strftime('%d/%m/%Y')
 
-    if button_id == 'datang':
+    if button_id == 'rekap':
+        conn = get_db()
+        cur = conn.cursor()
+        bulan_ini = wib.strftime('%Y-%m')
+        cur.execute("""
+            SELECT COUNT(*),
+                   COALESCE(SUM(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600), 0)
+            FROM absensi
+            WHERE user_id=%s AND TO_CHAR(tanggal, 'YYYY-MM')=%s AND jam_pulang IS NOT NULL
+        """, (user_id, bulan_ini))
+        hari_kerja, total_jam = cur.fetchone()
+        conn.close()
+
+        avg_jam = round(total_jam / hari_kerja, 2) if hari_kerja > 0 else 0
+
+        await query.edit_message_text(
+            text=f"📊 *Rekap Bulan {bulan_ini}*\n"
+                 f"━━━━━━━━━━━━━━\n"
+                 f"🗓️ Hari Kerja: {hari_kerja} hari\n"
+                 f"⏱️ Total Jam: {round(total_jam, 2)} jam\n"
+                 f"📈 Rata-rata: {avg_jam} jam/hari\n"
+                 f"Klik /start untuk kembali",
+            parse_mode='Markdown'
+        )
+
+    elif button_id == 'saya':
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT tanggal, jam_datang, jam_pulang, status,
+                   CASE WHEN jam_pulang IS NOT NULL
+                   THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
+                   ELSE NULL END as total_jam
+            FROM absensi
+            WHERE user_id=%s
+            ORDER BY tanggal DESC
+            LIMIT 7
+        """, (user_id,))
+        data = cur.fetchall()
+        conn.close()
+
+        if not data:
+            teks = "Belum ada data absensi"
+        else:
+            teks = "👤 *Data Absensi 7 Hari Terakhir*\n━━━━━━━━━━━━━━"
+            for row in data:
+                tgl, datang, pulang, st, total = row
+                teks += f"\n\n📅 {tgl.strftime('%d/%m')}"
+                if st!= 'hadir':
+                    teks += f"\nStatus: *{st.capitalize()}*"
+                else:
+                    teks += f"\nMasuk: {datang.strftime('%H:%M') if datang else '-'}"
+                    teks += f" | Pulang: {pulang.strftime('%H:%M') if pulang else '-'}"
+                    teks += f" | {total if total else '-'} jam"
+
+        await query.edit_message_text(
+            text=teks + "\n\nKlik /start untuk kembali",
+            parse_mode='Markdown'
+        )
+
+    elif button_id in ['izin', 'sakit', 'cuti']:
+        if simpan_status(user_id, nama, button_id):
+            await query.edit_message_text(
+                text=f"📝 *{button_id.capitalize()} Tercatat*\n📅 {hari_ini}\n\n"
+                     f"Status hari ini diubah menjadi {button_id.capitalize()}.\n"
+                     f"Klik /start untuk kembali",
+                parse_mode='Markdown'
+            )
+        else:
+            await query.answer("Gagal menyimpan status", show_alert=True)
+
+    elif button_id == 'datang':
         if status!= 'belum':
             await query.answer("Kamu sudah absen datang", show_alert=True)
             return
@@ -287,6 +394,7 @@ def main():
             tanggal DATE NOT NULL,
             jam_datang TIME,
             jam_pulang TIME,
+            status TEXT DEFAULT 'hadir',
             UNIQUE(user_id, tanggal)
         )
     """)
