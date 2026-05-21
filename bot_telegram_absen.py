@@ -3,7 +3,7 @@ import threading
 import psycopg2
 import csv
 import io
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
@@ -12,8 +12,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 app_flask = Flask(__name__)
 WIB = ZoneInfo("Asia/Jakarta")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-REMINDER_HOUR = 8
-REMINDER_MINUTE = 15
 
 REASON = 1
 
@@ -76,11 +74,11 @@ def home():
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
             th { background: #4CAF50; color: white; }
             tr:hover { background: #f1f1f1; }
-         .telat { background: #ffebee; color: #c62828; font-weight: bold; }
-         .status-izin { color: orange; }
-         .status-sakit { color: red; }
-         .status-cuti { color: blue; }
-         .filter { text-align: center; margin-bottom: 20px; }
+           .telat { background: #ffebee; color: #c62828; font-weight: bold; }
+           .status-izin { color: orange; }
+           .status-sakit { color: red; }
+           .status-cuti { color: blue; }
+           .filter { text-align: center; margin-bottom: 20px; }
             input, button { padding: 8px; font-size: 16px; }
             @media (max-width: 600px) {
                 table, thead, tbody, th, td, tr { display: block; }
@@ -151,20 +149,46 @@ def is_libur(tanggal):
 
 def get_keyboard(status):
     buttons = []
+
     if status == 'belum':
+        # Baris 1
         buttons.append([
             InlineKeyboardButton("✅ Datang", callback_data='datang'),
-            InlineKeyboardButton("🚪 Pulang", callback_data='pulang')
+            InlineKeyboardButton("🚪 Pulang", callback_data='pulang'),
+            InlineKeyboardButton("📝 Izin", callback_data='izin')
+        ])
+        # Baris 2
+        buttons.append([
+            InlineKeyboardButton("🤒 Sakit", callback_data='sakit'),
+            InlineKeyboardButton("🏖️ Cuti", callback_data='cuti'),
+            InlineKeyboardButton("📊 Rekap", callback_data='rekap')
+        ])
+        # Baris 3
+        buttons.append([
+            InlineKeyboardButton("📋 Saya", callback_data='saya'),
+            InlineKeyboardButton("👥 Tim", callback_data='tim'),
+            InlineKeyboardButton("👑 Admin", callback_data='admin')
+        ])
+
+    elif status == 'datang':
+        buttons.append([
+            InlineKeyboardButton("🚪 Pulang", callback_data='pulang'),
+            InlineKeyboardButton("📝 Izin", callback_data='izin'),
+            InlineKeyboardButton("📊 Rekap", callback_data='rekap')
         ])
         buttons.append([
-            InlineKeyboardButton("📝 Izin", callback_data='izin'),
-            InlineKeyboardButton("🤒 Sakit", callback_data='sakit'),
-            InlineKeyboardButton("🏖️ Cuti", callback_data='cuti')
+            InlineKeyboardButton("📋 Saya", callback_data='saya'),
+            InlineKeyboardButton("👥 Tim", callback_data='tim'),
+            InlineKeyboardButton("👑 Admin", callback_data='admin')
         ])
-    elif status == 'datang':
-        buttons.append([InlineKeyboardButton("🚪 Pulang", callback_data='pulang')])
 
-    buttons.append([InlineKeyboardButton("📊 Rekap Bulan Ini", callback_data='rekap')])
+    else:
+        buttons.append([
+            InlineKeyboardButton("📊 Rekap", callback_data='rekap'),
+            InlineKeyboardButton("📋 Saya", callback_data='saya'),
+            InlineKeyboardButton("👥 Tim", callback_data='tim')
+        ])
+
     return InlineKeyboardMarkup(buttons)
 
 def cek_absen(user_id):
@@ -285,36 +309,6 @@ def get_data_saya(user_id):
     data = cur.fetchall()
     conn.close()
     return data
-
-def get_belum_absen():
-    conn = get_db()
-    cur = conn.cursor()
-    hari_ini = datetime.now(WIB).date()
-    cur.execute("""
-        SELECT DISTINCT user_id, nama FROM absensi
-        WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti')
-    """, (hari_ini,))
-    data = cur.fetchall()
-    conn.close()
-    return data
-
-async def send_reminder(context: ContextTypes.DEFAULT_TYPE):
-    hari_ini = datetime.now(WIB).date()
-
-    # Skip Minggu dan libur nasional
-    if hari_ini.weekday() == 6 or is_libur(hari_ini):
-        print("Skip reminder: Minggu atau libur nasional")
-        return
-
-    belum_absen = get_belum_absen()
-    for user_id, nama in belum_absen:
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"🔔 Hai {nama}, jangan lupa absen datang ya!\nJam 08:15 udah lewat nih."
-            )
-        except Exception as e:
-            print(f"Gagal kirim reminder ke {user_id}: {e}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -544,16 +538,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         teks += f"Rata-rata: {round(total_jam/hari_hadir, 2) if hari_hadir > 0 else 0} jam/hari"
         await query.edit_message_text(teks, parse_mode='Markdown')
 
-    elif button_id == 'admin_belum':
-        if user_id!= ADMIN_ID:
+    elif button_id == 'saya':
+        data = get_data_saya(user_id)
+        if not data:
+            await query.edit_message_text("Belum ada data absen 7 hari terakhir.")
             return
-        hari_ini = datetime.now(WIB).date()
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT nama FROM absensi WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti')", (hari_ini,))
-        belum = cur.fetchall()
-        conn.close()
-        teks = "❌ *Belum Absen Hari Ini:*\n"
-        for nama, in belum:
-            teks += f"- {nama}\n"
-        await query
+        teks = "*📋 Absen 7 Hari Terakhir*\n\n"
+        for row in data:
+            tanggal, datang, pulang, status, alasan, total_jam = row
+            status_text = status or 'hadir'
+            teks += f"*{tanggal}*\n"
+            teks += f"Datang: {datang.strftime('%H:%M') if datang else '-'}\n"
+            teks += f"Pulang: {pulang.strftime('%H:%M') if pulang else '-'}\n"
+            teks += f"Status: {status_tex
