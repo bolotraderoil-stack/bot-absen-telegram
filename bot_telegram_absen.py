@@ -47,83 +47,53 @@ def home():
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Data Absensi</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-            h2 { text-align: center; }
-            table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-            th { background: #4CAF50; color: white; }
-            tr:hover { background: #f1f1f1; }
-           .filter { text-align: center; margin-bottom: 20px; }
-            input, button { padding: 8px; font-size: 16px; }
-           .status-izin { color: orange; font-weight: bold; }
-           .status-sakit { color: red; font-weight: bold; }
-           .status-cuti { color: blue; font-weight: bold; }
-            @media (max-width: 600px) {
-                table, thead, tbody, th, td, tr { display: block; }
-                th { display: none; }
-                td { border: none; position: relative; padding-left: 50%; }
-                td:before {
-                    content: attr(data-label);
-                    position: absolute;
-                    left: 10px;
-                    font-weight: bold;
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <h2>📋 Data Absensi</h2>
-        <div class="filter">
-            <form method="get">
-                <input type="date" name="tanggal" value="{tgl}">
-                <button type="submit">Filter</button>
-                <a href="/"><button type="button">Reset</button></a>
-            </form>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Nama</th>
-                    <th>Tanggal</th>
-                    <th>Jam Datang</th>
-                    <th>Jam Pulang</th>
-                    <th>Status</th>
-                    <th>Total Jam</th>
-                </tr>
-            </thead>
-            <tbody>
-    """.format(tgl=tanggal if tanggal else "")
-
-    for row in data:
-        nama, tanggal, datang, pulang, status, total_jam = row
-        status_class = f"status-{status}" if status!= 'hadir' else ""
-        status_text = status.capitalize()
-        html += f"""
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Absensi {nama_bulan}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {{ 
+            font-family: Arial, sans-serif; 
+            padding: 20px; 
+            background: #f5f5f5; 
+        }}
+        h1 {{ 
+            color: #333; 
+        }}
+        table {{ 
+            width: 100%; 
+            border-collapse: collapse; 
+            background: white; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+        }}
+        th, td {{ 
+            padding: 12px; 
+            text-align: left; 
+            border-bottom: 1px solid #ddd; 
+        }}
+        th {{ 
+            background: #4CAF50; 
+            color: white; 
+        }}
+        .status-hadir {{ color: green; font-weight: bold; }}
+        .status-izin {{ color: orange; font-weight: bold; }}
+        .status-sakit {{ color: red; font-weight: bold; }}
+        .status-cuti {{ color: blue; font-weight: bold; }}
+    </style>
+</head>
+<body>
+    <h1>Absensi Bulan {nama_bulan} {tahun}</h1>
+    <table>
         <tr>
-            <td data-label="Nama">{nama}</td>
-            <td data-label="Tanggal">{tanggal}</td>
-            <td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td>
-            <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
-            <td data-label="Status" class="{status_class}">{status_text}</td>
-            <td data-label="Total Jam">{total_jam if total_jam else '-'}</td>
+            <th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th><th>Status</th><th>Total Jam</th>
         </tr>
-        """
-
-    html += """
-            </tbody>
-        </table>
-    </body>
-    </html>
-    """
-    return html
+        {rows}
+    </table>
+</body>
+</html>
+"""
 
 def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
