@@ -6,6 +6,7 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from supabase import create_client, Client
 
+# Ambil env variable
 TOKEN = os.environ['TOKEN']
 SUPABASE_URL = os.environ['SUPABASE_URL']
 SUPABASE_KEY = os.environ['SUPABASE_KEY']
@@ -60,6 +61,7 @@ def home():
     bulan_sekarang = datetime.now().month
     tahun = datetime.now().year
     
+    # Mapping bulan ke Bahasa Indonesia
     bulan_id = {
         1: 'Januari', 2: 'Februari', 3: 'Maret', 4: 'April',
         5: 'Mei', 6: 'Juni', 7: 'Juli', 8: 'Agustus',
@@ -67,11 +69,14 @@ def home():
     }
     nama_bulan = bulan_id[bulan_sekarang]
 
+    # Ambil data dari Supabase
     try:
         data = get_db().table('absensi').select('*').eq('bulan', bulan_sekarang).eq('tahun', tahun).order('tanggal').execute().data
-    except:
+    except Exception as e:
+        print("DB Error:", e)
         data = []
 
+    # Bikin baris tabel
     rows = ""
     for d in data:
         status = d.get('status', 'hadir')
