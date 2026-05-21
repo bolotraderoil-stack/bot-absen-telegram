@@ -57,6 +57,85 @@ def home():
 
         data = cur.fetchall()
         conn.close()
+
+        # HTML header
+        html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Data Absensi</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body {{ font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }}
+                h2 {{ text-align: center; }}
+                table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+                th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+                th {{ background: #4CAF50; color: white; }}
+                tr:hover {{ background: #f1f1f1; }}
+               .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+               .status-izin {{ color: orange; }}
+               .status-sakit {{ color: red; }}
+               .status-cuti {{ color: blue; }}
+               .filter {{ text-align: center; margin-bottom: 20px; }}
+                input, button {{ padding: 8px; font-size: 16px; }}
+                @media (max-width: 600px) {{
+                    table, thead, tbody, th, td, tr {{ display: block; }}
+                    th {{ display: none; }}
+                    td {{ border: none; position: relative; padding-left: 50%; }}
+                    td:before {{
+                        content: attr(data-label);
+                        position: absolute;
+                        left: 10px;
+                        font-weight: bold;
+                    }}
+                }}
+            </style>
+        </head>
+        <body>
+            <h2>📋 Data Absensi</h2>
+            <div class="filter">
+                <form method="get">
+                    <input type="date" name="tanggal" value="{tgl}">
+                    <button type="submit">Filter</button>
+                    <a href="/"><button type="button">Reset</button></a>
+                </form>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th>
+                        <th>Status</th><th>Alasan</th><th>Total Jam</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """.format(tgl=tanggal if tanggal else "")
+
+        # Loop data - harus di dalam try
+        for row in data:
+            nama, tanggal, datang, pulang, status, alasan, total_jam, telat = row
+            row_class = "telat" if telat else ""
+            status_class = f"status-{status}" if status else ""
+            html += f"""
+            <tr class="{row_class}">
+                <td data-label="Nama">{nama}</td>
+                <td data-label="Tanggal">{tanggal}</td>
+                <td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td>
+                <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
+                <td data-label="Status" class="{status_class}">{status or 'hadir'}</td>
+                <td data-label="Alasan">{alasan or '-'}</td>
+                <td data-label="Total Jam">{total_jam if total_jam else '-'}</td>
+            </tr>
+            """
+
+        html += """
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+        return html
+
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
