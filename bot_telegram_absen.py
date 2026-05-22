@@ -1,9 +1,9 @@
 import os
 import threading
-import psycopg2
+import psycopg
 import csv
 import io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
@@ -12,8 +12,23 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 app_flask = Flask(__name__)
 WIB = ZoneInfo("Asia/Jakarta")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+JAM_MASUK = time(9, 0, 0)
 
 REASON = 1
+
+def get_db():
+    return psycopg.connect(os.getenv("SUPABASE_URL"), sslmode='require', row_factory=psycopg.rows.dict_row)
+
+def format_interval(interval):
+    """Convert interval Postgres ke format 08j 34m"""
+    if not interval:
+        return None
+    total_seconds = int(interval.total_seconds())
+    if total_seconds < 0:
+        return None
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    return f"{hours:02d}j {minutes:02d}m"
 
 @app_flask.route('/')
 def home():
@@ -24,34 +39,41 @@ def home():
 
         if tanggal:
             cur.execute("""
-                SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan,
-                CASE
-                    WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-                    THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
-                    ELSE NULL
-                END as total_jam,
-                CASE
-                    WHEN jam_datang > TIME '09:00:00' THEN true
-                    ELSE false
-                END as telat
-                FROM absensi
-                WHERE tanggal=%s
-                ORDER BY jam_datang DESC
-            """, (tanggal,))
+                SELECT
+                    u.nama,
+                    %s as tanggal,
+                    a.jam_datang,
+                    a.jam_pulang,
+                    CASE
+                        WHEN a.status IN ('izin', 'sakit', 'cuti') THEN a.status
+                        WHEN a.jam_datang IS NOT NULL AND l.tanggal IS NOT NULL THEN 'hadir (lembur)'
+                        WHEN l.tanggal IS NOT NULL THEN 'libur'
+                        WHEN EXTRACT(DOW FROM %s::date) = 0 AND a.jam_datang IS NOT NULL THEN 'hadir (lembur)'
+                        WHEN EXTRACT(DOW FROM %s::date) = 0 THEN 'libur'
+                        WHEN a.jam_datang IS NULL THEN 'tidak hadir'
+                        ELSE 'hadir'
+                    END as status,
+                    a.alasan,
+                    (a.jam_pulang - a.jam_datang) as durasi,
+                    COALESCE(a.telat, false) as telat
+                FROM users u
+                LEFT JOIN absensi a ON a.user_id = u.user_id AND a.tanggal = %s
+                LEFT JOIN libur_nasional l ON l.tanggal = %s
+                ORDER BY u.nama
+            """, (tanggal, tanggal, tanggal, tanggal, tanggal))
         else:
             cur.execute("""
-                SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan,
-                CASE
-                    WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-                    THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
-                    ELSE NULL
-                END as total_jam,
-                CASE
-                    WHEN jam_datang > TIME '09:00:00' THEN true
-                    ELSE false
-                END as telat
-                FROM absensi
-                ORDER BY tanggal DESC, jam_datang DESC
+                SELECT
+                    a.nama,
+                    a.tanggal,
+                    a.jam_datang,
+                    a.jam_pulang,
+                    COALESCE(a.status, 'hadir') as status,
+                    a.alasan,
+                    (a.jam_pulang - a.jam_datang) as durasi,
+                    COALESCE(a.telat, false) as telat
+                FROM absensi a
+                ORDER BY a.tanggal DESC, a.jam_datang DESC
                 LIMIT 100
             """)
 
@@ -66,29 +88,32 @@ def home():
             <title>Data Absensi</title>
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
-                body {{ font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }}
-                h2 {{ text-align: center; }}
-                table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
-                th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-                th {{ background: #4CAF50; color: white; }}
-                tr:hover {{ background: #f1f1f1; }}
-             .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-             .status-izin {{ color: orange; }}
-             .status-sakit {{ color: red; }}
-             .status-cuti {{ color: blue; }}
-             .filter {{ text-align: center; margin-bottom: 20px; }}
-                input, button {{ padding: 8px; font-size: 16px; }}
-                @media (max-width: 600px) {{
-                    table, thead, tbody, th, td, tr {{ display: block; }}
-                    th {{ display: none; }}
-                    td {{ border: none; position: relative; padding-left: 50%; }}
-                    td:before {{
+                body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+                h2 { text-align: center; }
+                table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background: #4CAF50; color: white; }
+                tr:hover { background: #f1f1f1; }
+             .telat { background: #ffebee; color: #c62828; font-weight: bold; }
+             .status-libur { color: #1976d2; font-weight: 600; }
+             .status-hadir.\(lembur\) { color: #2e7d32; font-weight: 600; }
+             .status-izin { color: orange; }
+             .status-sakit { color: red; }
+             .status-cuti { color: blue; }
+             .status-tidak.hadir { color: #9e9e9e; }
+             .filter { text-align: center; margin-bottom: 20px; }
+                input, button { padding: 8px; font-size: 16px; }
+                @media (max-width: 600px) {
+                    table, thead, tbody, th, td, tr { display: block; }
+                    th { display: none; }
+                    td { border: none; position: relative; padding-left: 50%; }
+                    td:before {
                         content: attr(data-label);
                         position: absolute;
                         left: 10px;
                         font-weight: bold;
-                    }}
-                }}
+                    }
+                }
             </style>
         </head>
         <body>
@@ -111,16 +136,26 @@ def home():
         """.format(tgl=tanggal if tanggal else "")
 
         for row in data:
-            nama, tanggal, datang, pulang, status, alasan, total_jam, telat = row
+            nama = row['nama']
+            tanggal = row['tanggal']
+            datang = row['jam_datang']
+            pulang = row['jam_pulang']
+            status = row['status']
+            alasan = row['alasan']
+            durasi = row['durasi']
+            telat = row['telat']
+
             row_class = "telat" if telat else ""
-            status_class = f"status-{status}" if status else ""
+            status_class = f"status-{status}".replace(" ", ".").replace("(", "\\(").replace(")", "\\)")
+            total_jam = format_interval(durasi)
+
             html += f"""
             <tr class="{row_class}">
                 <td data-label="Nama">{nama}</td>
                 <td data-label="Tanggal">{tanggal}</td>
                 <td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td>
                 <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
-                <td data-label="Status" class="{status_class}">{status or 'hadir'}</td>
+                <td data-label="Status" class="{status_class}">{status}</td>
                 <td data-label="Alasan">{alasan or '-'}</td>
                 <td data-label="Total Jam">{total_jam if total_jam else '-'}</td>
             </tr>
@@ -137,9 +172,6 @@ def home():
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-def get_db():
-    return psycopg2.connect(os.getenv("SUPABASE_URL"))
-
 def is_libur(tanggal):
     conn = get_db()
     cur = conn.cursor()
@@ -150,8 +182,6 @@ def is_libur(tanggal):
 
 def get_keyboard(status):
     buttons = []
-
-    # Baris 1: tombol absen harian, muncul sesuai status
     if status == 'belum':
         buttons.append([
             InlineKeyboardButton("✅ Datang", callback_data='datang'),
@@ -165,7 +195,6 @@ def get_keyboard(status):
             InlineKeyboardButton("🤒 Sakit", callback_data='sakit')
         ])
 
-    # Baris 2 & 3: selalu muncul
     buttons.append([
         InlineKeyboardButton("📊 Rekap", callback_data='rekap'),
         InlineKeyboardButton("📋 Saya", callback_data='saya'),
@@ -176,7 +205,6 @@ def get_keyboard(status):
         InlineKeyboardButton("👑 Admin", callback_data='admin'),
         InlineKeyboardButton("❌", callback_data='noop')
     ])
-
     return InlineKeyboardMarkup(buttons)
 
 def cek_absen(user_id):
@@ -188,11 +216,11 @@ def cek_absen(user_id):
     conn.close()
     if not data:
         return 'belum'
-    if data[2] in ['izin', 'sakit', 'cuti']:
-        return data[2]
-    if data[0] and not data[1]:
+    if data['status'] in ['izin', 'sakit', 'cuti']:
+        return data['status']
+    if data['jam_datang'] and not data['jam_pulang']:
         return 'datang'
-    if data[0] and data[1]:
+    if data['jam_datang'] and data['jam_pulang']:
         return 'selesai'
     return 'belum'
 
@@ -202,7 +230,16 @@ def simpan_datang(user_id, nama):
     wib = datetime.now(WIB)
     hari_ini = wib.date()
     jam_sekarang = wib.time()
-    telat = jam_sekarang > datetime.strptime('09:00:00', '%H:%M:%S').time()
+
+    # Cek libur nasional
+    cur.execute("SELECT 1 FROM libur_nasional WHERE tanggal=%s", (hari_ini,))
+    is_libur_nasional = cur.fetchone() is not None
+
+    # Cek Minggu
+    is_minggu = hari_ini.weekday() == 6
+
+    # Telat cuma kalau bukan libur nasional dan bukan Minggu
+    telat = False if (is_minggu or is_libur_nasional) else jam_sekarang > JAM_MASUK
 
     try:
         cur.execute("""
@@ -258,8 +295,12 @@ def get_rekap_bulanan(user_id, bulan_str=None):
 
     cur.execute("""
         SELECT COUNT(*) as hari_hadir,
-               SUM(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600) as total_jam,
-               SUM(CASE WHEN telat THEN 1 ELSE 0 END) as total_telat
+               SUM(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))) as total_detik,
+               SUM(CASE
+                   WHEN telat AND EXTRACT(DOW FROM tanggal)!= 0
+                   AND NOT EXISTS(SELECT 1 FROM libur_nasional WHERE tanggal=absensi.tanggal)
+                   THEN 1 ELSE 0
+               END) as total_telat
         FROM absensi
         WHERE user_id=%s
         AND EXTRACT(MONTH FROM tanggal) = %s
@@ -271,9 +312,10 @@ def get_rekap_bulanan(user_id, bulan_str=None):
     data = cur.fetchone()
     conn.close()
 
-    hari_hadir = data[0] if data[0] else 0
-    total_jam = round(float(data[1]), 2) if data[1] else 0
-    total_telat = data[2] if data[2] else 0
+    hari_hadir = data['hari_hadir'] or 0
+    total_detik = int(data['total_detik'] or 0)
+    total_jam = round(total_detik / 3600, 2)
+    total_telat = data['total_telat'] or 0
     return hari_hadir, total_jam, total_telat
 
 def get_data_saya(user_id):
@@ -284,11 +326,7 @@ def get_data_saya(user_id):
 
     cur.execute("""
         SELECT tanggal, jam_datang, jam_pulang, status, alasan,
-        CASE
-            WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-            THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
-            ELSE NULL
-        END as total_jam
+        (jam_pulang - jam_datang) as durasi
         FROM absensi
         WHERE user_id=%s AND tanggal >= %s
         ORDER BY tanggal DESC
@@ -317,9 +355,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur.execute("SELECT jam_datang, jam_pulang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, datetime.now(WIB).date()))
         data = cur.fetchone()
         conn.close()
-        teks += f"✅ Datang: {data[0].strftime('%H:%M:%S')}\n"
-        teks += f"🚪 Pulang: {data[1].strftime('%H:%M:%S')}\n\n"
-        teks += "Absensi hari ini sudah selesai"
+        if data:
+            teks += f"✅ Datang: {data['jam_datang'].strftime('%H:%M:%S')}\n"
+            teks += f"🚪 Pulang: {data['jam_pulang'].strftime('%H:%M:%S')}\n\n"
+            teks += "Absensi hari ini sudah selesai"
 
     await update.message.reply_text(teks, reply_markup=keyboard, parse_mode='Markdown')
 
@@ -331,7 +370,7 @@ async def rekap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hari_hadir, total_jam, total_telat = get_rekap_bulanan(user_id, bulan_str)
         bulan_nama = datetime.strptime(bulan_str, '%Y-%m').strftime('%B %Y') if bulan_str else datetime.now(WIB).strftime('%B %Y')
     except:
-        await update.message.reply_text("Format salah. Contoh: `/export 2025-10`", parse_mode='Markdown')
+        await update.message.reply_text("Format salah. Contoh: `/rekap 2025-10`", parse_mode='Markdown')
         return
 
     teks = f"📊 *Rekap {bulan_nama}*\n\n"
@@ -352,7 +391,13 @@ async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     teks = "*📋 Absen 7 Hari Terakhir*\n\n"
     for row in data:
-        tanggal, datang, pulang, status, alasan, total_jam = row
+        tanggal = row['tanggal']
+        datang = row['jam_datang']
+        pulang = row['jam_pulang']
+        status = row['status']
+        alasan = row['alasan']
+        total_jam = format_interval(row['durasi'])
+
         status_text = status or 'hadir'
         teks += f"*{tanggal}*\n"
         teks += f"Datang: {datang.strftime('%H:%M') if datang else '-'}\n"
@@ -361,7 +406,7 @@ async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if alasan:
             teks += f"Alasan: {alasan}\n"
         if total_jam:
-            teks += f"Total: {total_jam} jam\n"
+            teks += f"Total: {total_jam}\n"
         teks += "\n"
 
     await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
@@ -382,11 +427,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = conn.cursor()
     cur.execute("""
         SELECT tanggal, jam_datang, jam_pulang, status, alasan,
-        CASE
-            WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-            THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
-            ELSE NULL
-        END as total_jam
+        (jam_pulang - jam_datang) as durasi
         FROM absensi
         WHERE user_id=%s
         AND EXTRACT(MONTH FROM tanggal) = %s
@@ -405,7 +446,15 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     writer = csv.writer(output)
     writer.writerow(['Tanggal', 'Jam Datang', 'Jam Pulang', 'Status', 'Alasan', 'Total Jam'])
     for row in data:
-        writer.writerow(row)
+        total_jam = format_interval(row['durasi'])
+        writer.writerow([
+            row['tanggal'],
+            row['jam_datang'].strftime('%H:%M:%S') if row['jam_datang'] else '-',
+            row['jam_pulang'].strftime('%H:%M:%S') if row['jam_pulang'] else '-',
+            row['status'],
+            row['alasan'],
+            total_jam
+        ])
 
     output.seek(0)
     await update.message.reply_document(
@@ -426,24 +475,13 @@ async def tim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """, (hari_ini,))
 
     hadir = cur.fetchall()
-
-    cur.execute("""
-        SELECT nama FROM absensi
-        WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti')
-    """, (hari_ini,))
-
-    belum = cur.fetchall()
     conn.close()
 
     teks = f"*👥 Kehadiran Tim - {hari_ini}*\n\n"
     teks += f"✅ *Sudah Hadir ({len(hadir)} orang):*\n"
-    for nama, jam, telat in hadir:
-        telat_text = " [TELAT]" if telat else ""
-        teks += f"- {nama}: {jam.strftime('%H:%M')}{telat_text}\n"
-
-    teks += f"\n❌ *Belum Absen ({len(belum)} orang):*\n"
-    for nama, in belum:
-        teks += f"- {nama}\n"
+    for row in hadir:
+        telat_text = " [TELAT]" if row['telat'] else ""
+        teks += f"- {row['nama']}: {row['jam_datang'].strftime('%H:%M')}{telat_text}\n"
 
     await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
 
@@ -453,7 +491,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Belum Absen Hari Ini", callback_data='admin_belum')],
         [InlineKeyboardButton("📅 Tambah Libur", callback_data='admin_libur')],
         [InlineKeyboardButton("❌ Tutup", callback_data='noop')]
     ])
@@ -494,23 +531,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cur = conn.cursor()
             cur.execute("""
                 SELECT jam_datang, jam_pulang,
-                ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2) as total_jam
+                (jam_pulang - jam_datang) as durasi
                 FROM absensi
                 WHERE user_id=%s AND tanggal=%s
             """, (user_id, wib.date()))
             data = cur.fetchone()
             conn.close()
 
-            jam_datang_str = data[0].strftime('%H:%M:%S')
-            jam_pulang_str = data[1].strftime('%H:%M:%S')
-            total_jam = data[2]
+            jam_datang_str = data['jam_datang'].strftime('%H:%M:%S')
+            jam_pulang_str = data['jam_pulang'].strftime('%H:%M:%S')
+            total_jam = format_interval(data['durasi'])
 
             await query.edit_message_text(
                 text=f"🤖 *Absen Selesai*\n📅 {hari_ini}\n"
                      f"━━━━━━━━━━━━━━\n"
                      f"✅ Datang: {jam_datang_str}\n"
                      f"🚪 Pulang: {jam_pulang_str}\n"
-                     f"⏱️ Total Jam Kerja: {total_jam} jam\n"
+                     f"⏱️ Total Jam Kerja: {total_jam}\n"
                      f"Absen hari ini sudah selesai terimakasih\n"
                      f"**Tetap semangat**",
                 parse_mode='Markdown',
@@ -539,50 +576,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         teks = "*📋 Absen 7 Hari Terakhir*\n\n"
         for row in data:
-            tanggal, datang, pulang, status, alasan, total_jam = row
-            status_text = status or 'hadir'
-            teks += f"*{tanggal}*\n"
-            teks += f"Datang: {datang.strftime('%H:%M') if datang else '-'}\n"
-            teks += f"Pulang: {pulang.strftime('%H:%M') if pulang else '-'}\n"
-            teks += f"Status: {status_text}\n"
-            if alasan:
-                teks += f"Alasan: {alasan}\n"
-            if total_jam:
-                teks += f"Total: {total_jam} jam\n"
+            teks += f"*{row['tanggal']}*\n"
+            teks += f"Datang: {row['jam_datang'].strftime('%H:%M') if row['jam_datang'] else '-'}\n"
+            teks += f"Pulang: {row['jam_pulang'].strftime('%H:%M') if row['jam_pulang'] else '-'}\n"
+            teks += f"Status: {row['status'] or 'hadir'}\n"
+            if row['alasan']:
+                teks += f"Alasan: {row['alasan']}\n"
+            if row['durasi']:
+                teks += f"Total: {format_interval(row['durasi'])}\n"
             teks += "\n"
-        await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
-
-    elif button_id == 'tim':
-        conn = get_db()
-        cur = conn.cursor()
-        hari_ini = datetime.now(WIB).date()
-        cur.execute("""
-            SELECT nama, jam_datang, telat FROM absensi
-            WHERE tanggal=%s AND jam_datang IS NOT NULL
-            ORDER BY jam_datang
-        """, (hari_ini,))
-        hadir = cur.fetchall()
-        cur.execute("""
-            SELECT nama FROM absensi
-            WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti')
-        """, (hari_ini,))
-        belum = cur.fetchall()
-        conn.close()
-
-        teks = f"*👥 Kehadiran Tim - {hari_ini}*\n\n"
-        teks += f"✅ *Sudah Hadir ({len(hadir)} orang):*\n"
-        for nama, jam, telat in hadir:
-            telat_text = " [TELAT]" if telat else ""
-            teks += f"- {nama}: {jam.strftime('%H:%M')}{telat_text}\n"
-        teks += f"\n❌ *Belum Absen ({len(belum)} orang):*\n"
-        for nama, in belum:
-            teks += f"- {nama}\n"
         await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
     elif button_id == 'download':
         bulan_ini = datetime.now(WIB).strftime('%Y-%m')
         await query.edit_message_text(
-            f"📥 Download data bulan ini: `/{'export'} {bulan_ini}`\n\n"
+            f"📥 Download data bulan ini: `/export {bulan_ini}`\n\n"
             "Atau ketik manual: `/export YYYY-MM`\n"
             "Contoh: `/export 2025-10`",
             reply_markup=get_keyboard(status)
@@ -593,25 +601,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Kamu bukan admin", show_alert=True)
             return
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Belum Absen Hari Ini", callback_data='admin_belum')],
             [InlineKeyboardButton("📅 Tambah Libur", callback_data='admin_libur')],
             [InlineKeyboardButton("❌ Tutup", callback_data='noop')]
         ])
         await query.edit_message_text("👑 *Admin Panel*", reply_markup=keyboard, parse_mode='Markdown')
-
-    elif button_id == 'admin_belum':
-        if user_id!= ADMIN_ID:
-            return
-        hari_ini = datetime.now(WIB).date()
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT nama FROM absensi WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti')", (hari_ini,))
-        belum = cur.fetchall()
-        conn.close()
-        teks = "❌ *Belum Absen Hari Ini:*\n"
-        for nama, in belum:
-            teks += f"- {nama}\n"
-        await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
     elif button_id == 'admin_libur':
         if user_id!= ADMIN_ID:
@@ -680,7 +673,14 @@ def main():
             tanggal DATE PRIMARY KEY
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id BIGINT PRIMARY KEY,
+            nama TEXT
+        )
+    """)
     cur.execute("ALTER TABLE absensi ADD COLUMN IF NOT EXISTS alasan TEXT")
+    cur.execute("ALTER TABLE absensi ADD COLUMN IF NOT EXISTS telat BOOLEAN DEFAULT false")
     conn.commit()
     conn.close()
     print("Database siap")
