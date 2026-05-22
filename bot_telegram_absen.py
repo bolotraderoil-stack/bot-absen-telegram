@@ -27,7 +27,7 @@ def home():
                 SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan,
                 CASE
                     WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-                    THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
+                    THEN ROUND(EXTRACT(EPOCH FROM ((jam_pulang - jam_datang))/3600)*24, 2)
                     ELSE NULL
                 END as total_jam,
                 CASE
