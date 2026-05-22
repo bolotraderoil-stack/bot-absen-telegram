@@ -652,13 +652,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
     elif button_id == 'admin_libur':
-    if user_id != ADMIN_ID:
-        return
-    await query.edit_message_text(
-        "Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2026-05-01", 
-        reply_markup=get_keyboard(status)
-    )
-    return REASON  
+        if user_id != ADMIN_ID:
+            return
+        await query.edit_message_text(
+            "Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2025-12-25", 
+            reply_markup=get_keyboard(status)
+        )
+        return REASON
     elif button_id == 'noop':
         await query.answer()
         await query.edit_message_text("Menu ditutup. Ketik /start untuk buka lagi.", reply_markup=None)
