@@ -59,58 +59,57 @@ def home():
         conn.close()
 
         html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Data Absensi</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-                body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-                h2 { text-align: center; }
-                table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-                th { background: #4CAF50; color: white; }
-                tr:hover { background: #f1f1f1; }
-               .telat { background: #ffebee; color: #c62828; font-weight: bold; }
-               .status-izin { color: orange; }
-               .status-sakit { color: red; }
-               .status-cuti { color: blue; }
-               .status-lembur { color: purple; font-weight: bold; }
-               .filter { text-align: center; margin-bottom: 20px; }
-                input, button { padding: 8px; font-size: 16px; }
-                @media (max-width: 600px) {
-                    table, thead, tbody, th, td, tr { display: block; }
-                    th { display: none; }
-                    td { border: none; position: relative; padding-left: 50%; }
-                    td:before {
-                        content: attr(data-label);
-                        position: absolute;
-                        left: 10px;
-                        font-weight: bold;
-                    }
-                }
-            </style>
-        </head>
-        <body>
-            <h2>📋 Data Absensi</h2>
-            <div class="filter">
-                <form method="get">
-                    <input type="date" name="tanggal" value="{tgl}">
-                    <button type="submit">Filter</button>
-                    <a href="/"><button type="button">Reset</button></a>
-                </form>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th>
-                        <th>Status</th><th>Alasan</th><th>Total Jam</th>
-                    </tr>
-                </thead>
-                <tbody>
-        """.format(tgl=tanggal if tanggal else "")
-
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Data Absensi</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {{ font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }}
+        h2 {{ text-align: center; }}
+        table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+        th {{ background: #4CAF50; color: white; }}
+        tr:hover {{ background: #f1f1f1; }}
+       .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+       .status-izin {{ color: orange; }}
+       .status-sakit {{ color: red; }}
+       .status-cuti {{ color: blue; }}
+       .status-lembur {{ color: purple; font-weight: bold; }}
+       .filter {{ text-align: center; margin-bottom: 20px; }}
+        input, button {{ padding: 8px; font-size: 16px; }}
+        @media (max-width: 600px) {{
+            table, thead, tbody, th, td, tr {{ display: block; }}
+            th {{ display: none; }}
+            td {{ border: none; position: relative; padding-left: 50%; }}
+            td:before {{
+                content: attr(data-label);
+                position: absolute;
+                left: 10px;
+                font-weight: bold;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <h2>📋 Data Absensi</h2>
+    <div class="filter">
+        <form method="get">
+            <input type="date" name="tanggal" value="{tgl}">
+            <button type="submit">Filter</button>
+            <a href="/"><button type="button">Reset</button></a>
+        </form>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th>
+                <th>Status</th><th>Alasan</th><th>Total Jam</th>
+            </tr>
+        </thead>
+        <tbody>
+""".format(tgl=tanggal if tanggal else "")
         for row in data:
             nama, tanggal, datang, pulang, status, alasan, telat_db, total_jam, telat_flag = row
             row_class = "telat" if telat_flag else ""
