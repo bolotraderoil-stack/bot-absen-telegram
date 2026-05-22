@@ -664,6 +664,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Menu ditutup. Ketik /start untuk buka lagi.", reply_markup=None)
 
 async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("USER ID:", update.effective_user.id, "ADMIN_ID:", ADMIN_ID)  
     teks = update.message.text.strip()
     status = context.user_data.get('status_izin')
 
