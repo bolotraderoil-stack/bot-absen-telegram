@@ -15,6 +15,25 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 REASON = 1
 
+def parse_interval_to_seconds(interval_str):
+    """Convert '7 days, 03:00:00' atau '03:00:00' jadi detik"""
+    if not interval_str:
+        return 0
+
+    total_seconds = 0
+    parts = interval_str.split(', ')
+
+    if len(parts) == 2: # ada days
+        days = int(parts[0].split()[0])
+        total_seconds += days * 86400
+        time_part = parts[1]
+    else:
+        time_part = parts[0]
+
+    h, m, s = map(int, time_part.split(':'))
+    total_seconds += h * 3600 + m * 60 + s
+    return total_seconds
+
 @app_flask.route('/')
 def home():
     try:
@@ -25,11 +44,7 @@ def home():
         if tanggal:
             cur.execute("""
                 SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
-                CASE
-                    WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-                    THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
-                    ELSE NULL
-                END as total_jam,
+                jam_pulang - jam_datang as total_interval,
                 CASE
                     WHEN jam_datang > TIME '09:00:00' THEN true
                     ELSE false
@@ -41,11 +56,7 @@ def home():
         else:
             cur.execute("""
                 SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
-                CASE
-                    WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-                    THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
-                    ELSE NULL
-                END as total_jam,
+                jam_pulang - jam_datang as total_interval,
                 CASE
                     WHEN jam_datang > TIME '09:00:00' THEN true
                     ELSE false
@@ -59,61 +70,68 @@ def home():
         conn.close()
 
         html = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Data Absensi</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {{ font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }}
-        h2 {{ text-align: center; }}
-        table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
-        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-        th {{ background: #4CAF50; color: white; }}
-        tr:hover {{ background: #f1f1f1; }}
-       .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-       .status-izin {{ color: orange; }}
-       .status-sakit {{ color: red; }}
-       .status-cuti {{ color: blue; }}
-       .status-lembur {{ color: purple; font-weight: bold; }}
-       .filter {{ text-align: center; margin-bottom: 20px; }}
-        input, button {{ padding: 8px; font-size: 16px; }}
-        @media (max-width: 600px) {{
-            table, thead, tbody, th, td, tr {{ display: block; }}
-            th {{ display: none; }}
-            td {{ border: none; position: relative; padding-left: 50%; }}
-            td:before {{
-                content: attr(data-label);
-                position: absolute;
-                left: 10px;
-                font-weight: bold;
-            }}
-        }}
-    </style>
-</head>
-<body>
-    <h2>📋 Data Absensi</h2>
-    <div class="filter">
-        <form method="get">
-            <input type="date" name="tanggal" value="{tgl}">
-            <button type="submit">Filter</button>
-            <a href="/"><button type="button">Reset</button></a>
-        </form>
-    </div>
-    <table>
-        <thead>
-            <tr>
-                <th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th>
-                <th>Status</th><th>Alasan</th><th>Total Jam</th>
-            </tr>
-        </thead>
-        <tbody>
-""".format(tgl=tanggal if tanggal else "")
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Data Absensi</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body {{ font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }}
+                h2 {{ text-align: center; }}
+                table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+                th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+                th {{ background: #4CAF50; color: white; }}
+                tr:hover {{ background: #f1f1f1; }}
+              .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+              .status-izin {{ color: orange; }}
+              .status-sakit {{ color: red; }}
+              .status-cuti {{ color: blue; }}
+              .status-lembur {{ color: purple; font-weight: bold; }}
+              .filter {{ text-align: center; margin-bottom: 20px; }}
+                input, button {{ padding: 8px; font-size: 16px; }}
+                @media (max-width: 600px) {{
+                    table, thead, tbody, th, td, tr {{ display: block; }}
+                    th {{ display: none; }}
+                    td {{ border: none; position: relative; padding-left: 50%; }}
+                    td:before {{
+                        content: attr(data-label);
+                        position: absolute;
+                        left: 10px;
+                        font-weight: bold;
+                    }}
+                }}
+            </style>
+        </head>
+        <body>
+            <h2>📋 Data Absensi</h2>
+            <div class="filter">
+                <form method="get">
+                    <input type="date" name="tanggal" value="{tgl}">
+                    <button type="submit">Filter</button>
+                    <a href="/"><button type="button">Reset</button></a>
+                </form>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th>
+                        <th>Status</th><th>Alasan</th><th>Total Jam</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """.format(tgl=tanggal if tanggal else "")
+
         for row in data:
-            nama, tanggal, datang, pulang, status, alasan, telat_db, total_jam, telat_flag = row
+            nama, tanggal, datang, pulang, status, alasan, telat_db, total_interval, telat_flag = row
             row_class = "telat" if telat_flag else ""
             status_class = f"status-{status}" if status else ""
+
+            total_detik = parse_interval_to_seconds(str(total_interval)) if total_interval else 0
+            h = total_detik // 3600
+            m = (total_detik % 3600) // 60
+            total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
+
             html += f"""
             <tr class="{row_class}">
                 <td data-label="Nama">{nama}</td>
@@ -122,7 +140,7 @@ def home():
                 <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
                 <td data-label="Status" class="{status_class}">{status or 'hadir'}</td>
                 <td data-label="Alasan">{alasan or '-'}</td>
-                <td data-label="Total Jam">{total_jam if total_jam else '-'}</td>
+                <td data-label="Total Jam">{total_jam}</td>
             </tr>
             """
 
@@ -141,11 +159,9 @@ def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
 def is_libur(tanggal):
-    # Cek Minggu
     if tanggal.weekday() == 6:
         return True, "Minggu"
 
-    # Cek libur nasional
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM libur_nasional WHERE tanggal=%s", (tanggal,))
@@ -165,7 +181,7 @@ def get_keyboard(status):
             InlineKeyboardButton("🚪 Pulang", callback_data='pulang'),
             InlineKeyboardButton("📝 Izin", callback_data='izin')
         ])
-    elif status == 'datang':
+    elif status == 'datang' or status == 'lembur':
         buttons.append([
             InlineKeyboardButton("🚪 Pulang", callback_data='pulang'),
             InlineKeyboardButton("📝 Izin", callback_data='izin'),
@@ -267,7 +283,7 @@ def get_rekap_bulanan(user_id, bulan_str=None):
 
     cur.execute("""
         SELECT COUNT(*) as hari_hadir,
-               SUM(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))) as total_detik,
+               SUM(jam_pulang - jam_datang) as total_interval,
                SUM(CASE WHEN telat THEN 1 ELSE 0 END) as total_telat
         FROM absensi
         WHERE user_id=%s
@@ -281,17 +297,19 @@ def get_rekap_bulanan(user_id, bulan_str=None):
     conn.close()
 
     hari_hadir = data[0] if data[0] else 0
-    total_detik = int(data[1]) if data[1] else 0
+    total_interval = str(data[1]) if data[1] else None
     total_telat = data[2] if data[2] else 0
 
-    total_jam_str = str(timedelta(seconds=total_detik)).split('.')[0]
-    h, m, s = map(int, total_jam_str.split(':'))
+    total_detik = parse_interval_to_seconds(total_interval)
+
+    h = total_detik // 3600
+    m = (total_detik % 3600) // 60
     total_jam_fmt = f"{h:02d}j {m:02d}m"
 
     if hari_hadir > 0:
         rata_detik = total_detik // hari_hadir
-        rata_str = str(timedelta(seconds=rata_detik)).split('.')[0]
-        rh, rm, rs = map(int, rata_str.split(':'))
+        rh = rata_detik // 3600
+        rm = (rata_detik % 3600) // 60
         rata_fmt = f"{rh:02d}j {rm:02d}m"
     else:
         rata_fmt = "00j 00m"
@@ -306,11 +324,7 @@ def get_data_saya(user_id):
 
     cur.execute("""
         SELECT tanggal, jam_datang, jam_pulang, status, alasan,
-        CASE
-            WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-            THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
-            ELSE NULL
-        END as total_jam
+        jam_pulang - jam_datang as total_interval
         FROM absensi
         WHERE user_id=%s AND tanggal >= %s
         ORDER BY tanggal DESC
@@ -329,9 +343,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teks = f"🤖 *Absen*\n📅 {hari_ini}\n\n"
     if status == 'belum':
         teks += "Waktunya absen datang"
-    elif status == 'datang':
+    elif status == 'datang' or status == 'lembur':
         teks += "✅ Sudah absen datang\nSilakan absen pulang"
-    elif status in ['izin', 'sakit', 'cuti', 'lembur']:
+    elif status in ['izin', 'sakit', 'cuti']:
         teks += f"📝 Status hari ini: {status}"
     else:
         conn = get_db()
@@ -374,7 +388,12 @@ async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     teks = "*📋 Absen 7 Hari Terakhir*\n\n"
     for row in data:
-        tanggal, datang, pulang, status, alasan, total_jam = row
+        tanggal, datang, pulang, status, alasan, total_interval = row
+        total_detik = parse_interval_to_seconds(str(total_interval)) if total_interval else 0
+        h = total_detik // 3600
+        m = (total_detik % 3600) // 60
+        total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
+
         status_text = status or 'hadir'
         teks += f"*{tanggal}*\n"
         teks += f"Datang: {datang.strftime('%H:%M') if datang else '-'}\n"
@@ -382,7 +401,7 @@ async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         teks += f"Status: {status_text}\n"
         if alasan:
             teks += f"Alasan: {alasan}\n"
-        if total_jam:
+        if total_jam!= "-":
             teks += f"Total: {total_jam}\n"
         teks += "\n"
 
@@ -404,11 +423,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = conn.cursor()
     cur.execute("""
         SELECT tanggal, jam_datang, jam_pulang, status, alasan,
-        CASE
-            WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-            THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
-            ELSE NULL
-        END as total_jam
+        jam_pulang - jam_datang as total_interval
         FROM absensi
         WHERE user_id=%s
         AND EXTRACT(MONTH FROM tanggal) = %s
@@ -427,7 +442,12 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     writer = csv.writer(output)
     writer.writerow(['Tanggal', 'Jam Datang', 'Jam Pulang', 'Status', 'Alasan', 'Total Jam'])
     for row in data:
-        writer.writerow(row)
+        tanggal, datang, pulang, status, alasan, total_interval = row
+        total_detik = parse_interval_to_seconds(str(total_interval)) if total_interval else 0
+        h = total_detik // 3600
+        m = (total_detik % 3600) // 60
+        total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
+        writer.writerow([tanggal, datang, pulang, status, alasan, total_jam])
 
     output.seek(0)
     await update.message.reply_document(
@@ -461,7 +481,7 @@ async def tim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teks += f"✅ *Hadir ({len(hadir)} orang):*\n"
     for nama, jam, telat, status in hadir:
         telat_text = " [TELAT]" if telat else ""
-        status_text = f" [{status.upper()}]" if status in ['lembur'] else ""
+        status_text = f" [{status.upper()}]" if status == 'lembur' else ""
         teks += f"- {nama}: {jam.strftime('%H:%M')}{telat_text}{status_text}\n"
 
     teks += f"\n❌ *Belum Absen ({len(belum)} orang):*\n"
@@ -510,7 +530,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Gagal absen datang", show_alert=True)
 
     elif button_id == 'pulang':
-        if status!= 'datang' and status!= 'lembur':
+        if status not in ['datang', 'lembur']:
             await query.answer("Kamu belum absen datang", show_alert=True)
             return
         if simpan_pulang(user_id):
@@ -518,7 +538,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cur = conn.cursor()
             cur.execute("""
                 SELECT jam_datang, jam_pulang, status,
-                TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"') as total_jam
+                jam_pulang - jam_datang as total_interval
                 FROM absensi
                 WHERE user_id=%s AND tanggal=%s
             """, (user_id, wib.date()))
@@ -528,7 +548,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             jam_datang_str = data[0].strftime('%H:%M:%S')
             jam_pulang_str = data[1].strftime('%H:%M:%S')
             status_akhir = data[2]
-            total_jam = data[3]
+            total_interval = str(data[3]) if data[3] else None
+
+            total_detik = parse_interval_to_seconds(total_interval)
+            h = total_detik // 3600
+            m = (total_detik % 3600) // 60
+            total_jam = f"{h:02d}j {m:02d}m"
 
             teks = f"🤖 *Absen Selesai*\n📅 {hari_ini}\n"
             teks += f"━━━━━━━━━━━━━━\n"
@@ -568,7 +593,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         teks = "*📋 Absen 7 Hari Terakhir*\n\n"
         for row in data:
-            tanggal, datang, pulang, status, alasan, total_jam = row
+            tanggal, datang, pulang, status, alasan, total_interval = row
+            total_detik = parse_interval_to_seconds(str(total_interval)) if total_interval else 0
+            h = total_detik // 3600
+            m = (total_detik % 3600) // 60
+            total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
+
             status_text = status or 'hadir'
             teks += f"*{tanggal}*\n"
             teks += f"Datang: {datang.strftime('%H:%M') if datang else '-'}\n"
@@ -576,7 +606,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             teks += f"Status: {status_text}\n"
             if alasan:
                 teks += f"Alasan: {alasan}\n"
-            if total_jam:
+            if total_jam!= "-":
                 teks += f"Total: {total_jam}\n"
             teks += "\n"
         await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
