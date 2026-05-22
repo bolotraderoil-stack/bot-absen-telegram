@@ -1,5 +1,3 @@
-supabase==2.7.1
-pytz==2024.2
-psycopg[binary]==3.2.5
-flask==3.0.0
-python-telegram-bot==21.6
+supabase
+python-telegram-bot
+flask
