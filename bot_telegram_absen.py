@@ -652,37 +652,57 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
     elif button_id == 'admin_libur':
-        if user_id!= ADMIN_ID:
-            return
-        await query.edit_message_text("Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2025-12-25", reply_markup=get_keyboard(status))
-
+    if user_id != ADMIN_ID:
+        return
+    await query.edit_message_text(
+        "Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2026-05-01", 
+        reply_markup=get_keyboard(status)
+    )
+    return REASON  
     elif button_id == 'noop':
         await query.answer()
         await query.edit_message_text("Menu ditutup. Ketik /start untuk buka lagi.", reply_markup=None)
 
 async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    alasan = update.message.text
+    teks = update.message.text.strip()
     status = context.user_data.get('status_izin')
 
+    # 1. Kalau lagi ngisi alasan izin/sakit/cuti
     if status:
         user_id = update.effective_user.id
         nama = update.effective_user.first_name
-        simpan_izin(user_id, nama, status, alasan)
-        await update.message.reply_text(f"✅ Status {status} berhasil disimpan.\nAlasan: {alasan}", reply_markup=get_keyboard(cek_absen(user_id)))
+        simpan_izin(user_id, nama, status, teks)
+        context.user_data.pop('status_izin', None)  # hapus biar gak nyangkut
+        await update.message.reply_text(
+            f"✅ Status {status} berhasil disimpan.\nAlasan: {teks}", 
+            reply_markup=get_keyboard(cek_absen(user_id))
+        )
         return ConversationHandler.END
 
+    # 2. Kalau admin lagi nambah libur
     if update.effective_user.id == ADMIN_ID:
         try:
-            tanggal = datetime.strptime(alasan, '%Y-%m-%d').date()
+            tanggal = datetime.strptime(teks, '%Y-%m-%d').date()
             conn = get_db()
             cur = conn.cursor()
-            cur.execute("INSERT INTO libur_nasional (tanggal) VALUES (%s) ON CONFLICT DO NOTHING", (tanggal,))
+            cur.execute(
+                "INSERT INTO libur_nasional (tanggal) VALUES (%s) ON CONFLICT DO NOTHING", 
+                (tanggal,)
+            )
             conn.commit()
             conn.close()
-            await update.message.reply_text(f"✅ Tanggal {tanggal} ditandai sebagai libur nasional", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
-        except:
-            await update.message.reply_text("Format salah. Gunakan YYYY-MM-DD", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
+            await update.message.reply_text(
+                f"✅ Tanggal {tanggal} ditandai sebagai libur nasional", 
+                reply_markup=get_keyboard(cek_absen(update.effective_user.id))
+            )
+        except ValueError:
+            await update.message.reply_text(
+                "Format salah. Gunakan YYYY-MM-DD\nContoh: 2025-12-25", 
+                reply_markup=get_keyboard(cek_absen(update.effective_user.id))
+            )
+        return ConversationHandler.END
 
+    # 3. Kalau bukan keduanya, akhiri aja
     return ConversationHandler.END
 
 def run_flask():
