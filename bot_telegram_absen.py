@@ -15,25 +15,6 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 REASON = 1
 
-def parse_interval_to_seconds(interval_str):
-    """Convert '7 days, 03:00:00' atau '03:00:00' jadi detik"""
-    if not interval_str:
-        return 0
-
-    total_seconds = 0
-    parts = interval_str.split(', ')
-
-    if len(parts) == 2: # ada days
-        days = int(parts[0].split()[0])
-        total_seconds += days * 86400
-        time_part = parts[1]
-    else:
-        time_part = parts[0]
-
-    h, m, s = map(int, time_part.split(':'))
-    total_seconds += h * 3600 + m * 60 + s
-    return total_seconds
-
 @app_flask.route('/')
 def home():
     try:
@@ -44,7 +25,7 @@ def home():
         if tanggal:
             cur.execute("""
                 SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
-                jam_pulang - jam_datang as total_interval,
+                EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik,
                 CASE
                     WHEN jam_datang > TIME '09:00:00' THEN true
                     ELSE false
@@ -56,7 +37,7 @@ def home():
         else:
             cur.execute("""
                 SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
-                jam_pulang - jam_datang as total_interval,
+                EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik,
                 CASE
                     WHEN jam_datang > TIME '09:00:00' THEN true
                     ELSE false
@@ -83,12 +64,12 @@ def home():
                 th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background: #4CAF50; color: white; }}
                 tr:hover {{ background: #f1f1f1; }}
-              .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-              .status-izin {{ color: orange; }}
-              .status-sakit {{ color: red; }}
-              .status-cuti {{ color: blue; }}
-              .status-lembur {{ color: purple; font-weight: bold; }}
-              .filter {{ text-align: center; margin-bottom: 20px; }}
+             .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+             .status-izin {{ color: orange; }}
+             .status-sakit {{ color: red; }}
+             .status-cuti {{ color: blue; }}
+             .status-lembur {{ color: purple; font-weight: bold; }}
+             .filter {{ text-align: center; margin-bottom: 20px; }}
                 input, button {{ padding: 8px; font-size: 16px; }}
                 @media (max-width: 600px) {{
                     table, thead, tbody, th, td, tr {{ display: block; }}
@@ -123,11 +104,11 @@ def home():
         """.format(tgl=tanggal if tanggal else "")
 
         for row in data:
-            nama, tanggal, datang, pulang, status, alasan, telat_db, total_interval, telat_flag = row
+            nama, tanggal, datang, pulang, status, alasan, telat_db, total_detik, telat_flag = row
             row_class = "telat" if telat_flag else ""
             status_class = f"status-{status}" if status else ""
 
-            total_detik = parse_interval_to_seconds(str(total_interval)) if total_interval else 0
+            total_detik = int(total_detik) if total_detik else 0
             h = total_detik // 3600
             m = (total_detik % 3600) // 60
             total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
@@ -181,7 +162,7 @@ def get_keyboard(status):
             InlineKeyboardButton("🚪 Pulang", callback_data='pulang'),
             InlineKeyboardButton("📝 Izin", callback_data='izin')
         ])
-    elif status == 'datang' or status == 'lembur':
+    elif status in ['datang', 'lembur']:
         buttons.append([
             InlineKeyboardButton("🚪 Pulang", callback_data='pulang'),
             InlineKeyboardButton("📝 Izin", callback_data='izin'),
@@ -283,7 +264,7 @@ def get_rekap_bulanan(user_id, bulan_str=None):
 
     cur.execute("""
         SELECT COUNT(*) as hari_hadir,
-               SUM(jam_pulang - jam_datang) as total_interval,
+               COALESCE(EXTRACT(EPOCH FROM SUM(jam_pulang - jam_datang)), 0) as total_detik,
                SUM(CASE WHEN telat THEN 1 ELSE 0 END) as total_telat
         FROM absensi
         WHERE user_id=%s
@@ -297,10 +278,8 @@ def get_rekap_bulanan(user_id, bulan_str=None):
     conn.close()
 
     hari_hadir = data[0] if data[0] else 0
-    total_interval = str(data[1]) if data[1] else None
+    total_detik = int(data[1]) if data[1] else 0
     total_telat = data[2] if data[2] else 0
-
-    total_detik = parse_interval_to_seconds(total_interval)
 
     h = total_detik // 3600
     m = (total_detik % 3600) // 60
@@ -324,7 +303,7 @@ def get_data_saya(user_id):
 
     cur.execute("""
         SELECT tanggal, jam_datang, jam_pulang, status, alasan,
-        jam_pulang - jam_datang as total_interval
+        EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik
         FROM absensi
         WHERE user_id=%s AND tanggal >= %s
         ORDER BY tanggal DESC
@@ -343,7 +322,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teks = f"🤖 *Absen*\n📅 {hari_ini}\n\n"
     if status == 'belum':
         teks += "Waktunya absen datang"
-    elif status == 'datang' or status == 'lembur':
+    elif status in ['datang', 'lembur']:
         teks += "✅ Sudah absen datang\nSilakan absen pulang"
     elif status in ['izin', 'sakit', 'cuti']:
         teks += f"📝 Status hari ini: {status}"
@@ -388,8 +367,8 @@ async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     teks = "*📋 Absen 7 Hari Terakhir*\n\n"
     for row in data:
-        tanggal, datang, pulang, status, alasan, total_interval = row
-        total_detik = parse_interval_to_seconds(str(total_interval)) if total_interval else 0
+        tanggal, datang, pulang, status, alasan, total_detik = row
+        total_detik = int(total_detik) if total_detik else 0
         h = total_detik // 3600
         m = (total_detik % 3600) // 60
         total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
@@ -423,7 +402,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = conn.cursor()
     cur.execute("""
         SELECT tanggal, jam_datang, jam_pulang, status, alasan,
-        jam_pulang - jam_datang as total_interval
+        EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik
         FROM absensi
         WHERE user_id=%s
         AND EXTRACT(MONTH FROM tanggal) = %s
@@ -442,8 +421,8 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     writer = csv.writer(output)
     writer.writerow(['Tanggal', 'Jam Datang', 'Jam Pulang', 'Status', 'Alasan', 'Total Jam'])
     for row in data:
-        tanggal, datang, pulang, status, alasan, total_interval = row
-        total_detik = parse_interval_to_seconds(str(total_interval)) if total_interval else 0
+        tanggal, datang, pulang, status, alasan, total_detik = row
+        total_detik = int(total_detik) if total_detik else 0
         h = total_detik // 3600
         m = (total_detik % 3600) // 60
         total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
@@ -538,7 +517,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cur = conn.cursor()
             cur.execute("""
                 SELECT jam_datang, jam_pulang, status,
-                jam_pulang - jam_datang as total_interval
+                EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik
                 FROM absensi
                 WHERE user_id=%s AND tanggal=%s
             """, (user_id, wib.date()))
@@ -548,9 +527,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             jam_datang_str = data[0].strftime('%H:%M:%S')
             jam_pulang_str = data[1].strftime('%H:%M:%S')
             status_akhir = data[2]
-            total_interval = str(data[3]) if data[3] else None
+            total_detik = int(data[3]) if data[3] else 0
 
-            total_detik = parse_interval_to_seconds(total_interval)
             h = total_detik // 3600
             m = (total_detik % 3600) // 60
             total_jam = f"{h:02d}j {m:02d}m"
@@ -593,8 +571,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         teks = "*📋 Absen 7 Hari Terakhir*\n\n"
         for row in data:
-            tanggal, datang, pulang, status, alasan, total_interval = row
-            total_detik = parse_interval_to_seconds(str(total_interval)) if total_interval else 0
+            tanggal, datang, pulang, status, alasan, total_detik = row
+            total_detik = int(total_detik) if total_detik else 0
             h = total_detik // 3600
             m = (total_detik % 3600) // 60
             total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
