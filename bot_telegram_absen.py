@@ -27,7 +27,7 @@ def home():
                 SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan,
                 CASE
                     WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-                    THEN ROUND(EXTRACT(EPOCH FROM ((jam_pulang - jam_datang))/3600)*24, 2)
+                    THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
                     ELSE NULL
                 END as total_jam,
                 CASE
@@ -43,7 +43,7 @@ def home():
                 SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan,
                 CASE
                     WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-                    THEN ROUND(EXTRACT(EPOCH FROM ((jam_pulang - jam_datang))/3600)*24, 2)
+                    THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
                     ELSE NULL
                 END as total_jam,
                 CASE
@@ -72,11 +72,11 @@ def home():
                 th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background: #4CAF50; color: white; }}
                 tr:hover {{ background: #f1f1f1; }}
-             .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-             .status-izin {{ color: orange; }}
-             .status-sakit {{ color: red; }}
-             .status-cuti {{ color: blue; }}
-             .filter {{ text-align: center; margin-bottom: 20px; }}
+           .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+           .status-izin {{ color: orange; }}
+           .status-sakit {{ color: red; }}
+           .status-cuti {{ color: blue; }}
+           .filter {{ text-align: center; margin-bottom: 20px; }}
                 input, button {{ padding: 8px; font-size: 16px; }}
                 @media (max-width: 600px) {{
                     table, thead, tbody, th, td, tr {{ display: block; }}
@@ -151,7 +151,6 @@ def is_libur(tanggal):
 def get_keyboard(status):
     buttons = []
 
-    # Baris 1: tombol absen harian, muncul sesuai status
     if status == 'belum':
         buttons.append([
             InlineKeyboardButton("✅ Datang", callback_data='datang'),
@@ -165,7 +164,6 @@ def get_keyboard(status):
             InlineKeyboardButton("🤒 Sakit", callback_data='sakit')
         ])
 
-    # Baris 2 & 3: selalu muncul
     buttons.append([
         InlineKeyboardButton("📊 Rekap", callback_data='rekap'),
         InlineKeyboardButton("📋 Saya", callback_data='saya'),
@@ -258,7 +256,7 @@ def get_rekap_bulanan(user_id, bulan_str=None):
 
     cur.execute("""
         SELECT COUNT(*) as hari_hadir,
-               SUM(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600) as total_jam,
+               SUM(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))) as total_detik,
                SUM(CASE WHEN telat THEN 1 ELSE 0 END) as total_telat
         FROM absensi
         WHERE user_id=%s
@@ -272,9 +270,24 @@ def get_rekap_bulanan(user_id, bulan_str=None):
     conn.close()
 
     hari_hadir = data[0] if data[0] else 0
-    total_jam = round(float(data[1]), 2) if data[1] else 0
+    total_detik = int(data[1]) if data[1] else 0
     total_telat = data[2] if data[2] else 0
-    return hari_hadir, total_jam, total_telat
+
+    # Format total jam ke HHj MMm
+    total_jam_str = str(timedelta(seconds=total_detik)).split('.')[0]
+    h, m, s = map(int, total_jam_str.split(':'))
+    total_jam_fmt = f"{h:02d}j {m:02d}m"
+
+    # Hitung rata-rata
+    if hari_hadir > 0:
+        rata_detik = total_detik // hari_hadir
+        rata_str = str(timedelta(seconds=rata_detik)).split('.')[0]
+        rh, rm, rs = map(int, rata_str.split(':'))
+        rata_fmt = f"{rh:02d}j {rm:02d}m"
+    else:
+        rata_fmt = "00j 00m"
+
+    return hari_hadir, total_jam_fmt, total_telat, rata_fmt
 
 def get_data_saya(user_id):
     conn = get_db()
@@ -286,7 +299,7 @@ def get_data_saya(user_id):
         SELECT tanggal, jam_datang, jam_pulang, status, alasan,
         CASE
             WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-            THEN ROUND(EXTRACT(EPOCH FROM ((jam_pulang - jam_datang))/3600)*24, 2)
+            THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
             ELSE NULL
         END as total_jam
         FROM absensi
@@ -328,7 +341,7 @@ async def rekap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bulan_str = context.args[0] if context.args else None
 
     try:
-        hari_hadir, total_jam, total_telat = get_rekap_bulanan(user_id, bulan_str)
+        hari_hadir, total_jam, total_telat, rata_rata = get_rekap_bulanan(user_id, bulan_str)
         bulan_nama = datetime.strptime(bulan_str, '%Y-%m').strftime('%B %Y') if bulan_str else datetime.now(WIB).strftime('%B %Y')
     except:
         await update.message.reply_text("Format salah. Contoh: `/export 2025-10`", parse_mode='Markdown')
@@ -336,9 +349,9 @@ async def rekap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     teks = f"📊 *Rekap {bulan_nama}*\n\n"
     teks += f"📅 Hari Hadir: {hari_hadir} hari\n"
-    teks += f"⏱️ Total Jam Kerja: {total_jam} jam\n"
+    teks += f"⏱️ Total Jam Kerja: {total_jam}\n"
     teks += f"⚠️ Telat: {total_telat} kali\n"
-    teks += f"Rata-rata: {round(total_jam/hari_hadir, 2) if hari_hadir > 0 else 0} jam/hari"
+    teks += f"Rata-rata: {rata_rata}/hari"
 
     await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
 
@@ -361,7 +374,7 @@ async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if alasan:
             teks += f"Alasan: {alasan}\n"
         if total_jam:
-            teks += f"Total: {total_jam} jam\n"
+            teks += f"Total: {total_jam}\n"
         teks += "\n"
 
     await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
@@ -384,7 +397,7 @@ async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SELECT tanggal, jam_datang, jam_pulang, status, alasan,
         CASE
             WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
-            THEN ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2)
+            THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
             ELSE NULL
         END as total_jam
         FROM absensi
@@ -494,7 +507,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cur = conn.cursor()
             cur.execute("""
                 SELECT jam_datang, jam_pulang,
-                ROUND(EXTRACT(EPOCH FROM (jam_pulang - jam_datang))/3600, 2) as total_jam
+                TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"') as total_jam
                 FROM absensi
                 WHERE user_id=%s AND tanggal=%s
             """, (user_id, wib.date()))
@@ -510,7 +523,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                      f"━━━━━━━━━━━━━━\n"
                      f"✅ Datang: {jam_datang_str}\n"
                      f"🚪 Pulang: {jam_pulang_str}\n"
-                     f"⏱️ Total Jam Kerja: {total_jam} jam\n"
+                     f"⏱️ Total Jam Kerja: {total_jam}\n"
                      f"Absen hari ini sudah selesai terimakasih\n"
                      f"**Tetap semangat**",
                 parse_mode='Markdown',
@@ -523,13 +536,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return REASON
 
     elif button_id == 'rekap':
-        hari_hadir, total_jam, total_telat = get_rekap_bulanan(user_id)
+        hari_hadir, total_jam, total_telat, rata_rata = get_rekap_bulanan(user_id)
         bulan_nama = datetime.now(WIB).strftime('%B %Y')
         teks = f"📊 *Rekap {bulan_nama}*\n\n"
         teks += f"📅 Hari Hadir: {hari_hadir} hari\n"
-        teks += f"⏱️ Total Jam Kerja: {total_jam} jam\n"
+        teks += f"⏱️ Total Jam Kerja: {total_jam}\n"
         teks += f"⚠️ Telat: {total_telat} kali\n"
-        teks += f"Rata-rata: {round(total_jam/hari_hadir, 2) if hari_hadir > 0 else 0} jam/hari"
+        teks += f"Rata-rata: {rata_rata}/hari"
         await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
     elif button_id == 'saya':
@@ -548,7 +561,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if alasan:
                 teks += f"Alasan: {alasan}\n"
             if total_jam:
-                teks += f"Total: {total_jam} jam\n"
+                teks += f"Total: {total_jam}\n"
             teks += "\n"
         await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
 
