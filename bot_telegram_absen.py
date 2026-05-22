@@ -24,7 +24,7 @@ def home():
 
         if tanggal:
             cur.execute("""
-                SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan,
+                SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
                 CASE
                     WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
                     THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
@@ -33,14 +33,14 @@ def home():
                 CASE
                     WHEN jam_datang > TIME '09:00:00' THEN true
                     ELSE false
-                END as telat
+                END as telat_flag
                 FROM absensi
                 WHERE tanggal=%s
                 ORDER BY jam_datang DESC
             """, (tanggal,))
         else:
             cur.execute("""
-                SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan,
+                SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
                 CASE
                     WHEN jam_pulang IS NOT NULL AND jam_datang IS NOT NULL
                     THEN TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"')
@@ -49,7 +49,7 @@ def home():
                 CASE
                     WHEN jam_datang > TIME '09:00:00' THEN true
                     ELSE false
-                END as telat
+                END as telat_flag
                 FROM absensi
                 ORDER BY tanggal DESC, jam_datang DESC
                 LIMIT 100
@@ -66,29 +66,30 @@ def home():
             <title>Data Absensi</title>
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
-                body {{ font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }}
-                h2 {{ text-align: center; }}
-                table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
-                th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-                th {{ background: #4CAF50; color: white; }}
-                tr:hover {{ background: #f1f1f1; }}
-           .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-           .status-izin {{ color: orange; }}
-           .status-sakit {{ color: red; }}
-           .status-cuti {{ color: blue; }}
-           .filter {{ text-align: center; margin-bottom: 20px; }}
-                input, button {{ padding: 8px; font-size: 16px; }}
-                @media (max-width: 600px) {{
-                    table, thead, tbody, th, td, tr {{ display: block; }}
-                    th {{ display: none; }}
-                    td {{ border: none; position: relative; padding-left: 50%; }}
-                    td:before {{
+                body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+                h2 { text-align: center; }
+                table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background: #4CAF50; color: white; }
+                tr:hover { background: #f1f1f1; }
+               .telat { background: #ffebee; color: #c62828; font-weight: bold; }
+               .status-izin { color: orange; }
+               .status-sakit { color: red; }
+               .status-cuti { color: blue; }
+               .status-lembur { color: purple; font-weight: bold; }
+               .filter { text-align: center; margin-bottom: 20px; }
+                input, button { padding: 8px; font-size: 16px; }
+                @media (max-width: 600px) {
+                    table, thead, tbody, th, td, tr { display: block; }
+                    th { display: none; }
+                    td { border: none; position: relative; padding-left: 50%; }
+                    td:before {
                         content: attr(data-label);
                         position: absolute;
                         left: 10px;
                         font-weight: bold;
-                    }}
-                }}
+                    }
+                }
             </style>
         </head>
         <body>
@@ -111,8 +112,8 @@ def home():
         """.format(tgl=tanggal if tanggal else "")
 
         for row in data:
-            nama, tanggal, datang, pulang, status, alasan, total_jam, telat = row
-            row_class = "telat" if telat else ""
+            nama, tanggal, datang, pulang, status, alasan, telat_db, total_jam, telat_flag = row
+            row_class = "telat" if telat_flag else ""
             status_class = f"status-{status}" if status else ""
             html += f"""
             <tr class="{row_class}">
@@ -141,12 +142,20 @@ def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
 def is_libur(tanggal):
+    # Cek Minggu
+    if tanggal.weekday() == 6:
+        return True, "Minggu"
+
+    # Cek libur nasional
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM libur_nasional WHERE tanggal=%s", (tanggal,))
     result = cur.fetchone()
     conn.close()
-    return result is not None
+    if result:
+        return True, "Libur Nasional"
+
+    return False, None
 
 def get_keyboard(status):
     buttons = []
@@ -186,7 +195,7 @@ def cek_absen(user_id):
     conn.close()
     if not data:
         return 'belum'
-    if data[2] in ['izin', 'sakit', 'cuti']:
+    if data[2] in ['izin', 'sakit', 'cuti', 'lembur']:
         return data[2]
     if data[0] and not data[1]:
         return 'datang'
@@ -202,17 +211,20 @@ def simpan_datang(user_id, nama):
     jam_sekarang = wib.time()
     telat = jam_sekarang > datetime.strptime('09:00:00', '%H:%M:%S').time()
 
+    libur, jenis_libur = is_libur(hari_ini)
+    status = 'lembur' if libur else 'hadir'
+
     try:
         cur.execute("""
-            INSERT INTO absensi (user_id, nama, tanggal, jam_datang, status, telat)
-            VALUES (%s, %s, %s, %s, 'hadir', %s)
+            INSERT INTO absensi (user_id, nama, tanggal, jam_datang, status, telat, alasan)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id, tanggal) DO NOTHING
-        """, (user_id, nama, hari_ini, jam_sekarang, telat))
+        """, (user_id, nama, hari_ini, jam_sekarang, status, telat, jenis_libur))
         conn.commit()
-        return True, telat
+        return True, telat, libur, jenis_libur
     except Exception as e:
         print("Error simpan_datang:", e)
-        return False, False
+        return False, False, False, None
     finally:
         conn.close()
 
@@ -263,7 +275,7 @@ def get_rekap_bulanan(user_id, bulan_str=None):
         AND EXTRACT(MONTH FROM tanggal) = %s
         AND EXTRACT(YEAR FROM tanggal) = %s
         AND jam_pulang IS NOT NULL
-        AND status = 'hadir'
+        AND status IN ('hadir', 'lembur')
     """, (user_id, bulan, tahun))
 
     data = cur.fetchone()
@@ -273,12 +285,10 @@ def get_rekap_bulanan(user_id, bulan_str=None):
     total_detik = int(data[1]) if data[1] else 0
     total_telat = data[2] if data[2] else 0
 
-    # Format total jam ke HHj MMm
     total_jam_str = str(timedelta(seconds=total_detik)).split('.')[0]
     h, m, s = map(int, total_jam_str.split(':'))
     total_jam_fmt = f"{h:02d}j {m:02d}m"
 
-    # Hitung rata-rata
     if hari_hadir > 0:
         rata_detik = total_detik // hari_hadir
         rata_str = str(timedelta(seconds=rata_detik)).split('.')[0]
@@ -322,7 +332,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         teks += "Waktunya absen datang"
     elif status == 'datang':
         teks += "✅ Sudah absen datang\nSilakan absen pulang"
-    elif status in ['izin', 'sakit', 'cuti']:
+    elif status in ['izin', 'sakit', 'cuti', 'lembur']:
         teks += f"📝 Status hari ini: {status}"
     else:
         conn = get_db()
@@ -433,7 +443,7 @@ async def tim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hari_ini = datetime.now(WIB).date()
 
     cur.execute("""
-        SELECT nama, jam_datang, telat FROM absensi
+        SELECT nama, jam_datang, telat, status FROM absensi
         WHERE tanggal=%s AND jam_datang IS NOT NULL
         ORDER BY jam_datang
     """, (hari_ini,))
@@ -442,17 +452,18 @@ async def tim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cur.execute("""
         SELECT nama FROM absensi
-        WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti')
+        WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti', 'lembur')
     """, (hari_ini,))
 
     belum = cur.fetchall()
     conn.close()
 
     teks = f"*👥 Kehadiran Tim - {hari_ini}*\n\n"
-    teks += f"✅ *Sudah Hadir ({len(hadir)} orang):*\n"
-    for nama, jam, telat in hadir:
+    teks += f"✅ *Hadir ({len(hadir)} orang):*\n"
+    for nama, jam, telat, status in hadir:
         telat_text = " [TELAT]" if telat else ""
-        teks += f"- {nama}: {jam.strftime('%H:%M')}{telat_text}\n"
+        status_text = f" [{status.upper()}]" if status in ['lembur'] else ""
+        teks += f"- {nama}: {jam.strftime('%H:%M')}{telat_text}{status_text}\n"
 
     teks += f"\n❌ *Belum Absen ({len(belum)} orang):*\n"
     for nama, in belum:
@@ -487,26 +498,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if status!= 'belum':
             await query.answer("Kamu sudah absen datang", show_alert=True)
             return
-        success, telat = simpan_datang(user_id, nama)
+        success, telat, libur, jenis_libur = simpan_datang(user_id, nama)
         if success:
-            telat_text = "\n⚠️ *Kamu telat!*" if telat else ""
-            await query.edit_message_text(
-                text=f"✅ Absen datang berhasil!\nWaktu: {jam}{telat_text}\n\nSilakan absen pulang",
-                reply_markup=get_keyboard('datang'),
-                parse_mode='Markdown'
-            )
+            teks = f"✅ Absen datang berhasil!\nWaktu: {jam}"
+            if libur:
+                teks += f"\n💜 *LEMBUR* - {jenis_libur}"
+            if telat:
+                teks += "\n⚠️ *Kamu telat!*"
+            teks += "\n\nSilakan absen pulang"
+            await query.edit_message_text(text=teks, reply_markup=get_keyboard('datang'), parse_mode='Markdown')
         else:
             await query.answer("Gagal absen datang", show_alert=True)
 
     elif button_id == 'pulang':
-        if status!= 'datang':
+        if status!= 'datang' and status!= 'lembur':
             await query.answer("Kamu belum absen datang", show_alert=True)
             return
         if simpan_pulang(user_id):
             conn = get_db()
             cur = conn.cursor()
             cur.execute("""
-                SELECT jam_datang, jam_pulang,
+                SELECT jam_datang, jam_pulang, status,
                 TO_CHAR(jam_pulang - jam_datang, 'HH24"j" MI"m"') as total_jam
                 FROM absensi
                 WHERE user_id=%s AND tanggal=%s
@@ -516,16 +528,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             jam_datang_str = data[0].strftime('%H:%M:%S')
             jam_pulang_str = data[1].strftime('%H:%M:%S')
-            total_jam = data[2]
+            status_akhir = data[2]
+            total_jam = data[3]
+
+            teks = f"🤖 *Absen Selesai*\n📅 {hari_ini}\n"
+            teks += f"━━━━━━━━━━━━━━\n"
+            teks += f"✅ Datang: {jam_datang_str}\n"
+            teks += f"🚪 Pulang: {jam_pulang_str}\n"
+            teks += f"⏱️ Total Jam Kerja: {total_jam}\n"
+            if status_akhir == 'lembur':
+                teks += f"💜 Status: LEMBUR\n"
+            teks += f"Absen hari ini sudah selesai terimakasih\n"
+            teks += f"**Tetap semangat**"
 
             await query.edit_message_text(
-                text=f"🤖 *Absen Selesai*\n📅 {hari_ini}\n"
-                     f"━━━━━━━━━━━━━━\n"
-                     f"✅ Datang: {jam_datang_str}\n"
-                     f"🚪 Pulang: {jam_pulang_str}\n"
-                     f"⏱️ Total Jam Kerja: {total_jam}\n"
-                     f"Absen hari ini sudah selesai terimakasih\n"
-                     f"**Tetap semangat**",
+                text=teks,
                 parse_mode='Markdown',
                 reply_markup=get_keyboard('selesai')
             )
@@ -570,23 +587,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur = conn.cursor()
         hari_ini = datetime.now(WIB).date()
         cur.execute("""
-            SELECT nama, jam_datang, telat FROM absensi
+            SELECT nama, jam_datang, telat, status FROM absensi
             WHERE tanggal=%s AND jam_datang IS NOT NULL
             ORDER BY jam_datang
         """, (hari_ini,))
         hadir = cur.fetchall()
         cur.execute("""
             SELECT nama FROM absensi
-            WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti')
+            WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti', 'lembur')
         """, (hari_ini,))
         belum = cur.fetchall()
         conn.close()
 
         teks = f"*👥 Kehadiran Tim - {hari_ini}*\n\n"
-        teks += f"✅ *Sudah Hadir ({len(hadir)} orang):*\n"
-        for nama, jam, telat in hadir:
+        teks += f"✅ *Hadir ({len(hadir)} orang):*\n"
+        for nama, jam, telat, status in hadir:
             telat_text = " [TELAT]" if telat else ""
-            teks += f"- {nama}: {jam.strftime('%H:%M')}{telat_text}\n"
+            status_text = f" [{status.upper()}]" if status == 'lembur' else ""
+            teks += f"- {nama}: {jam.strftime('%H:%M')}{telat_text}{status_text}\n"
         teks += f"\n❌ *Belum Absen ({len(belum)} orang):*\n"
         for nama, in belum:
             teks += f"- {nama}\n"
@@ -595,7 +613,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif button_id == 'download':
         bulan_ini = datetime.now(WIB).strftime('%Y-%m')
         await query.edit_message_text(
-            f"📥 Download data bulan ini: `/{'export'} {bulan_ini}`\n\n"
+            f"📥 Download data bulan ini: `/export {bulan_ini}`\n\n"
             "Atau ketik manual: `/export YYYY-MM`\n"
             "Contoh: `/export 2025-10`",
             reply_markup=get_keyboard(status)
@@ -618,7 +636,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hari_ini = datetime.now(WIB).date()
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT nama FROM absensi WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti')", (hari_ini,))
+        cur.execute("SELECT nama FROM absensi WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti', 'lembur')", (hari_ini,))
         belum = cur.fetchall()
         conn.close()
         teks = "❌ *Belum Absen Hari Ini:*\n"
@@ -693,7 +711,6 @@ def main():
             tanggal DATE PRIMARY KEY
         )
     """)
-    cur.execute("ALTER TABLE absensi ADD COLUMN IF NOT EXISTS alasan TEXT")
     conn.commit()
     conn.close()
     print("Database siap")
