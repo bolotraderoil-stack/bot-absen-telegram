@@ -414,7 +414,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             akurasi = lokasi.horizontal_accuracy or 999
             print(f"[DEBUG] Jarak:{int(jarak)}m Akurasi:{akurasi}m")
 
-            if akurasi > 100:
+            if akurasi > 500:
                await update.message.reply_text("❌ GPS akurasi jelek >100m. Matikan Fake GPS", reply_markup=ReplyKeyboardRemove())
                context.user_data.clear()
                return
