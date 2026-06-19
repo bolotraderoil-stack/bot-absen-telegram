@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, request
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile,
-    KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Location
+    KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
@@ -20,20 +20,19 @@ app_flask = Flask(__name__)
 WIB = ZoneInfo("Asia/Jakarta")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
-# Koordinat kantor - GANTI SESUAI LOKASI ANDA
-KANTOR_LAT = float(os.getenv("KANTOR_LAT", "-7.578106"))
-KANTOR_LON = float(os.getenv("KANTOR_LON", "110.682429"))
-RADIUS_METER = 500
+# Ambil dari Environment Variable saja. Tidak ada default.
+KANTOR_LAT = float(os.getenv("KANTOR_LAT"))
+KANTOR_LON = float(os.getenv("KANTOR_LON"))
+RADIUS_METER = int(os.getenv("RADIUS_METER", "500"))
 
 REASON = 1
 
-app_flask.route('/')
+@app_flask.route('/')
 def home():
     try:
         tanggal = request.args.get('tanggal')
         with get_db() as conn:
             cur = conn.cursor()
-
             if tanggal:
                 cur.execute("""
                     SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
@@ -48,56 +47,23 @@ def home():
                     CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag
                     FROM absensi ORDER BY tanggal DESC, jam_datang DESC LIMIT 100
                 """)
-
             data = cur.fetchall()
 
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>Data Absensi</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-                body {{ font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }}
-                h2 {{ text-align: center; }}
-                table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
-                th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-                th {{ background: #4CAF50; color: white; }}
-                tr:hover {{ background: #f1f1f1; }}
-               .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-               .status-izin {{ color: orange; }}
-               .status-sakit {{ color: red; }}
-               .status-cuti {{ color: blue; }}
-               .status-lembur {{ color: purple; font-weight: bold; }}
-               .filter {{ text-align: center; margin-bottom: 20px; }}
-                input, button {{ padding: 8px; font-size: 16px; }}
-                @media (max-width: 600px) {{
-                    table, thead, tbody, th, td, tr {{ display: block; }}
-                    th {{ display: none; }}
-                    td {{ border: none; position: relative; padding-left: 50%; }}
-                    td:before {{ content: attr(data-label); position: absolute; left: 10px; font-weight: bold; }}
-                }}
-            </style>
-        </head>
-        <body>
-            <h2>📋 Data Absensi</h2>
-            <div class="filter">
-                <form method="get">
-                    <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
-                    <button type="submit">Filter</button>
-                    <a href="/"><button type="button">Reset</button></a>
-                </form>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th>
-                        <th>Status</th><th>Alasan</th><th>Total Jam</th>
-                    </tr>
-                </thead>
-                <tbody>
-        """
+        html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>body{{font-family:Arial,sans-serif;padding:20px;background:#f5f5f5;}}
+        h2{{text-align:center;}}table{{width:100%;border-collapse:collapse;background:white;box-shadow:0 2px 5px rgba(0,0,0,0.1);}}
+        th,td{{padding:12px;text-align:left;border-bottom:1px solid #ddd;}}th{{background:#4CAF50;color:white;}}
+        tr:hover{{background:#f1f1f1;}}.telat{{background:#ffebee;color:#c62828;font-weight:bold;}}
+      .status-izin{{color:orange;}}.status-sakit{{color:red;}}.status-cuti{{color:blue;}}
+      .status-lembur{{color:purple;font-weight:bold;}}.filter{{text-align:center;margin-bottom:20px;}}
+        input,button{{padding:8px;font-size:16px;}}@media(max-width:600px){{table,thead,tbody,th,td,tr{{display:block;}}
+        th{{display:none;}}td{{border:none;position:relative;padding-left:50%;}}td:before{{content:attr(data-label);
+        position:absolute;left:10px;font-weight:bold;}}}}</style></head><body>
+        <h2>📋 Data Absensi</h2><div class="filter"><form method="get">
+        <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
+        <button type="submit">Filter</button><a href="/"><button type="button">Reset</button></a></form></div>
+        <table><thead><tr><th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th><th>Status</th><th>Alasan</th><th>Total Jam</th></tr></thead><tbody>"""
 
         for row in data:
             nama, tanggal, datang, pulang, status, alasan, telat_db, total_detik, telat_flag = row
@@ -107,22 +73,14 @@ def home():
             h = total_detik // 3600
             m = (total_detik % 3600) // 60
             total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
-
-            html += f"""
-            <tr class="{row_class}">
-                <td data-label="Nama">{nama}</td>
-                <td data-label="Tanggal">{tanggal}</td>
-                <td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td>
-                <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
-                <td data-label="Status" class="{status_class}">{status or 'hadir'}</td>
-                <td data-label="Alasan">{alasan or '-'}</td>
-                <td data-label="Total Jam">{total_jam}</td>
-            </tr>
-            """
+            html += f"""<tr class="{row_class}"><td data-label="Nama">{nama}</td><td data-label="Tanggal">{tanggal}</td>
+            <td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td>
+            <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
+            <td data-label="Status" class="{status_class}">{status or 'hadir'}</td>
+            <td data-label="Alasan">{alasan or '-'}</td><td data-label="Total Jam">{total_jam}</td></tr>"""
 
         html += "</tbody></table></body></html>"
         return html
-
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
@@ -148,7 +106,6 @@ def is_libur(tanggal):
     return False, None
 
 def hitung_jarak_meter(lat1, lon1, lat2, lon2):
-    """Menghitung jarak 2 titik koordinat dalam meter menggunakan rumus Haversine"""
     R = 6371000
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
@@ -475,26 +432,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['status_izin'] = button_id
         await query.edit_message_text(f"Kirim alasan {button_id}:")
         return REASON
-
     elif button_id == 'rekap':
         hari_hadir, total_jam, total_telat, rata_rata = get_rekap_bulanan(user_id)
         bulan_nama = datetime.now(WIB).strftime('%B %Y')
         teks = f"📊 *Rekap {bulan_nama}*\n\n📅 Hari Hadir: {hari_hadir} hari\n⏱️ Total Jam Kerja: {total_jam}\n⚠️ Telat: {total_telat} kali\nRata-rata: {rata_rata}/hari"
         await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
-
     elif button_id == 'saya':
         await saya_command(update, context)
-
     elif button_id == 'tim':
         await tim_command(update, context)
-
     elif button_id == 'download':
         bulan_ini = datetime.now(WIB).strftime('%Y-%m')
         await query.edit_message_text(f"📥 Download data bulan ini: `/export {bulan_ini}`\n\nAtau ketik manual: `/export YYYY-MM`")
-
     elif button_id == 'admin':
         await admin_command(update, context)
-
     elif button_id == 'admin_belum':
         if user_id!= ADMIN_ID: return
         hari_ini = datetime.now(WIB).date()
@@ -502,14 +453,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cur = conn.cursor()
             cur.execute("SELECT nama FROM absensi WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti', 'lembur')", (hari_ini,))
             belum = cur.fetchall()
-        teks = "❌ *Belum Absen Hari Ini:*\n" + "\n".join([f"- {nama}" for nama, in belum])
+        teks = "❌ *Belum Absen Hari Ini:*\n" + "\n".join([f"- {nama}" for nama, in belum]) if belum else "✅ Semua sudah absen"
         await query.edit_message_text(teks, parse_mode='Markdown')
-
     elif button_id == 'admin_libur':
         if user_id!= ADMIN_ID: return
         await query.edit_message_text("Kirim tanggal libur format YYYY-MM-DD. Contoh: 2025-12-25")
         return REASON
-
     elif button_id == 'noop':
         await query.edit_message_text("Menu ditutup. Ketik /start untuk buka lagi.")
 
@@ -546,8 +495,14 @@ def run_flask():
 def main():
     TOKEN = os.getenv("TOKEN")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
+    KANTOR_LAT_ENV = os.getenv("KANTOR_LAT")
+    KANTOR_LON_ENV = os.getenv("KANTOR_LON")
+
     if not TOKEN or not SUPABASE_URL:
         print("Error: TOKEN dan SUPABASE_URL harus diset")
+        return
+    if not KANTOR_LAT_ENV or not KANTOR_LON_ENV:
+        print("Error: KANTOR_LAT dan KANTOR_LON harus diset di Environment Variable")
         return
 
     with get_db() as conn:
@@ -577,11 +532,16 @@ def main():
     threading.Thread(target=run_flask, daemon=True).start()
     app = ApplicationBuilder().token(TOKEN).build()
 
+    button_pattern = '^(izin|sakit|cuti|rekap|saya|tim|download|admin|admin_belum|admin_libur|noop)$'
+
     conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button_handler)],
+        entry_points=[CallbackQueryHandler(button_handler, pattern=button_pattern)],
         states={REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_alasan)]},
         fallbacks=[]
     )
+
+    app.add_handler(CallbackQueryHandler(minta_lokasi, pattern='^minta_lokasi_'))
+    app.add_handler(MessageHandler(filters.LOCATION, terima_lokasi))
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("rekap", rekap_command))
@@ -589,10 +549,9 @@ def main():
     app.add_handler(CommandHandler("export", export_command))
     app.add_handler(CommandHandler("tim", tim_command))
     app.add_handler(CommandHandler("admin", admin_command))
+
     app.add_handler(conv_handler)
-    app.add_handler(CallbackQueryHandler(minta_lokasi, pattern='^minta_lokasi_'))
-    app.add_handler(MessageHandler(filters.LOCATION, terima_lokasi))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern=button_pattern))
 
     print("Bot berjalan...")
     app.run_polling(drop_pending_updates=True, close_loop=False)
