@@ -8,20 +8,15 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 app_flask = Flask(__name__)
 WIB = ZoneInfo("Asia/Jakarta")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
-# Env untuk GPS - isi di Render
 KANTOR_LAT = float(os.getenv("KANTOR_LAT", "-6.9667"))
 KANTOR_LON = float(os.getenv("KANTOR_LON", "110.4167"))
 RADIUS_METER = int(os.getenv("RADIUS_METER", "500"))
-
-REASON = 1
-AWAITING_LOCATION = 2
-AWAITING_PHOTO = 3
 
 def query_db(query, params=(), fetchone=False, fetchall=False, commit=False):
     conn = get_db()
@@ -158,8 +153,8 @@ def hitung_jarak(lat1, lon1, lat2, lon2):
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-def get_keyboard(status, minta_lokasi=False):
-    if minta_lokasi:
+def get_keyboard(status, step=None):
+    if step == 'lokasi':
         keyboard = [[KeyboardButton("📍 Kirim Lokasi", request_location=True)]]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
@@ -255,6 +250,7 @@ def get_data_saya(user_id):
     return query_db(sql, (user_id, tujuh_hari_lalu), fetchall=True) or []
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear() # reset state manual
     user_id = update.effective_user.id
     status = cek_absen(user_id)
     wib_now = datetime.now(WIB)
@@ -277,112 +273,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(teks, reply_markup=keyboard, parse_mode='Markdown')
 
-async def rekap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    bulan_str = context.args[0] if context.args else None
-    try:
-        hari_hadir, total_jam, total_telat, rata_rata = get_rekap_bulanan(user_id, bulan_str)
-        bulan_nama = datetime.strptime(bulan_str, '%Y-%m').strftime('%B %Y') if bulan_str else datetime.now(WIB).strftime('%B %Y')
-    except ValueError:
-        await update.message.reply_text("Format salah. Contoh: `/export 2025-10`", parse_mode='Markdown')
-        return
-    except Exception as e:
-        print(f"Error rekap: {e}")
-        await update.message.reply_text("Error server, coba lagi nanti")
-        return
-
-    teks = f"📊 *Rekap {bulan_nama}*\n\n📅 Hari Hadir: {hari_hadir} hari\n⏱️ Total Jam Kerja: {total_jam}\n⚠️ Telat: {total_telat} kali\nRata-rata: {rata_rata}/hari"
-    await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
-
-async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    data = get_data_saya(user_id)
-    if not data:
-        await update.message.reply_text("Belum ada data absen 7 hari terakhir.", reply_markup=get_keyboard(cek_absen(user_id)))
-        return
-
-    teks = "*📋 Absen 7 Hari Terakhir*\n\n"
-    for row in data:
-        tanggal, datang, pulang, status, alasan, total_detik = row
-        total_detik = int(total_detik) if total_detik else 0
-        h, m = divmod(total_detik, 3600)
-        total_jam = f"{h:02d}j {m//60:02d}m" if total_detik > 0 else "-"
-        status_text = status or 'hadir'
-        teks += f"*{tanggal}*\nDatang: {datang.strftime('%H:%M') if datang else '-'}\nPulang: {pulang.strftime('%H:%M') if pulang else '-'}\nStatus: {status_text}\n"
-        if alasan:
-            teks += f"Alasan: {alasan}\n"
-        if total_jam!= "-":
-            teks += f"Total: {total_jam}\n"
-        teks += "\n"
-
-    await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
-
-async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if len(context.args)!= 1:
-        await update.message.reply_text("Format: `/export 2025-10`", parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
-        return
-    try:
-        tahun, bulan = map(int, context.args[0].split('-'))
-    except ValueError:
-        await update.message.reply_text("Format salah. Contoh: `/export 2025-10`", reply_markup=get_keyboard(cek_absen(user_id)))
-        return
-
-    sql = """
-        SELECT tanggal, jam_datang, jam_pulang, status, alasan,
-        EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik
-        FROM absensi WHERE user_id=%s AND EXTRACT(MONTH FROM tanggal)=%s AND EXTRACT(YEAR FROM tanggal)=%s ORDER BY tanggal
-    """
-    data = query_db(sql, (user_id, bulan, tahun), fetchall=True)
-    if not data:
-        await update.message.reply_text("Tidak ada data untuk bulan ini.", reply_markup=get_keyboard(cek_absen(user_id)))
-        return
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['Tanggal', 'Jam Datang', 'Jam Pulang', 'Status', 'Alasan', 'Total Jam'])
-    for row in data:
-        tanggal, datang, pulang, status, alasan, total_detik = row
-        total_detik = int(total_detik) if total_detik else 0
-        h, m = divmod(total_detik, 3600)
-        total_jam = f"{h:02d}j {m//60:02d}m" if total_detik > 0 else "-"
-        writer.writerow([tanggal, datang, pulang, status, alasan, total_jam])
-
-    output.seek(0)
-    await update.message.reply_document(
-        document=InputFile(io.BytesIO(output.getvalue().encode()), filename=f"absen_{context.args[0]}.csv"),
-        caption="📄 Data absen bulan ini"
-    )
-    await update.message.reply_text("Selesai", reply_markup=get_keyboard(cek_absen(user_id)))
-
-async def tim_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    hari_ini = datetime.now(WIB).date()
-    hadir = query_db("SELECT nama, jam_datang, telat, status FROM absensi WHERE tanggal=%s AND jam_datang IS NOT NULL ORDER BY jam_datang", (hari_ini,), fetchall=True) or []
-    belum = query_db("SELECT nama FROM absensi WHERE tanggal=%s AND jam_datang IS NULL AND status NOT IN ('izin', 'sakit', 'cuti', 'lembur')", (hari_ini,), fetchall=True) or []
-
-    teks = f"*👥 Kehadiran Tim - {hari_ini}*\n\n✅ *Hadir ({len(hadir)} orang):*\n"
-    for nama, jam, telat, status in hadir:
-        telat_text = " [TELAT]" if telat else ""
-        status_text = f" [{status.upper()}]" if status == 'lembur' else ""
-        teks += f"- {nama}: {jam.strftime('%H:%M')}{telat_text}{status_text}\n"
-    teks += f"\n❌ *Belum Absen ({len(belum)} orang):*\n"
-    for nama, in belum:
-        teks += f"- {nama}\n"
-
-    await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
-
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id!= ADMIN_ID:
-        await update.message.reply_text("❌ Kamu bukan admin.", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
-        return
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Belum Absen Hari Ini", callback_data='admin_belum')],
-        [InlineKeyboardButton("📅 Tambah Libur", callback_data='admin_libur')],
-        [InlineKeyboardButton("❌ Tutup", callback_data='noop')]
-    ])
-    await update.message.reply_text("👑 *Admin Panel*", reply_markup=keyboard, parse_mode='Markdown')
-
-# Handler tombol doang, nggak ngurus lokasi/foto
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -390,32 +280,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nama = query.from_user.first_name
     button_id = query.data
     status = cek_absen(user_id)
-    wib_now = datetime.now(WIB)
-    jam = wib_now.strftime('%H:%M:%S')
-    hari_ini = wib_now.strftime('%d/%m/%Y')
+
+    # Reset state kalau pencet tombol
+    if button_id not in ['noop']:
+        context.user_data.clear()
 
     if button_id == 'datang':
         if status!= 'belum':
             await query.answer("Kamu sudah absen datang", show_alert=True)
             return
         context.user_data['aksi'] = 'datang'
-        keyboard = get_keyboard(status, minta_lokasi=True)
+        context.user_data['step'] = 'tunggu_lokasi'
+        keyboard = get_keyboard(status, step='lokasi')
         await query.edit_message_text("1/2 Kirim lokasi dulu", reply_markup=keyboard)
-        return AWAITING_LOCATION
 
     elif button_id == 'pulang':
         if status not in ['datang', 'lembur']:
             await query.answer("Kamu belum absen datang", show_alert=True)
             return
         context.user_data['aksi'] = 'pulang'
-        keyboard = get_keyboard(status, minta_lokasi=True)
+        context.user_data['step'] = 'tunggu_lokasi'
+        keyboard = get_keyboard(status, step='lokasi')
         await query.edit_message_text("1/2 Kirim lokasi pulang", reply_markup=keyboard)
-        return AWAITING_LOCATION
 
     elif button_id in ['izin', 'sakit', 'cuti']:
+        context.user_data['step'] = 'tunggu_alasan'
         context.user_data['status_izin'] = button_id
         await query.edit_message_text(f"Kirim alasan {button_id}:", reply_markup=get_keyboard(status))
-        return REASON
 
     elif button_id == 'rekap':
         hari_hadir, total_jam, total_telat, rata_rata = get_rekap_bulanan(user_id)
@@ -483,76 +374,77 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif button_id == 'admin_libur':
         if user_id!= ADMIN_ID:
             return
+        context.user_data['step'] = 'tunggu_tanggal_libur'
         await query.edit_message_text("Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2025-12-25", reply_markup=get_keyboard(status))
-        return REASON
+
     elif button_id == 'noop':
-        await query.answer()
+        context.user_data.clear()
         await query.edit_message_text("Menu ditutup. Ketik /start untuk buka lagi.", reply_markup=None)
 
-# Handler lokasi khusus untuk ConversationHandler
-async def terima_lokasi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    lokasi = update.message.location
-    user_id = update.effective_user.id
-    jarak = hitung_jarak(KANTOR_LAT, KANTOR_LON, lokasi.latitude, lokasi.longitude)
-
-    if lokasi.accuracy > 100:
-        await update.message.reply_text("❌ GPS akurasi jelek >100m. Matikan Fake GPS", reply_markup=ReplyKeyboardRemove())
-        context.user_data.clear()
-        return ConversationHandler.END
-    if jarak > RADIUS_METER:
-        await update.message.reply_text(f"❌ Kejauhan {int(jarak)}m dari kantor", reply_markup=ReplyKeyboardRemove())
-        context.user_data.clear()
-        return ConversationHandler.END
-
-    context.user_data['lat'] = lokasi.latitude
-    context.user_data['lon'] = lokasi.longitude
-    await update.message.reply_text("2/2 Sekarang kirim selfie wajah", reply_markup=ReplyKeyboardRemove())
-    return AWAITING_PHOTO
-
-# Handler foto khusus untuk ConversationHandler
-async def terima_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    foto = update.message.photo[-1]
-    foto_id = foto.file_id
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     nama = update.effective_user.first_name
-    lat = context.user_data.get('lat')
-    lon = context.user_data.get('lon')
-    aksi = context.user_data.get('aksi')
-    jam_server = datetime.now(WIB).strftime('%H:%M:%S')
+    step = context.user_data.get('step')
 
-    if aksi == 'datang':
-        simpan_datang(user_id, nama, lat, lon, foto_id)
-        await update.message.reply_text(f"✅ Absen datang berhasil jam {jam_server}\nFoto + lokasi tersimpan")
-    else:
-        simpan_pulang(user_id, lat, lon, foto_id)
-        await update.message.reply_text(f"✅ Absen pulang berhasil jam {jam_server}")
+    # 1. Handler lokasi
+    if update.message.location and step == 'tunggu_lokasi':
+        lokasi = update.message.location
+        jarak = hitung_jarak(KANTOR_LAT, KANTOR_LON, lokasi.latitude, lokasi.longitude)
 
-    context.user_data.clear()
-    await start(update, context)
-    return ConversationHandler.END
+        if lokasi.accuracy > 100:
+            await update.message.reply_text("❌ GPS akurasi jelek >100m. Matikan Fake GPS", reply_markup=ReplyKeyboardRemove())
+            context.user_data.clear()
+            return
+        if jarak > RADIUS_METER:
+            await update.message.reply_text(f"❌ Kejauhan {int(jarak)}m dari kantor", reply_markup=ReplyKeyboardRemove())
+            context.user_data.clear()
+            return
 
-async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    teks = update.message.text.strip()
-    status = context.user_data.get('status_izin')
+        context.user_data['lat'] = lokasi.latitude
+        context.user_data['lon'] = lokasi.longitude
+        context.user_data['step'] = 'tunggu_foto'
+        await update.message.reply_text("2/2 Sekarang kirim selfie wajah", reply_markup=ReplyKeyboardRemove())
+        return
 
-    if status:
-        user_id = update.effective_user.id
-        nama = update.effective_user.first_name
+    # 2. Handler foto
+    if update.message.photo and step == 'tunggu_foto':
+        foto = update.message.photo[-1]
+        foto_id = foto.file_id
+        lat = context.user_data.get('lat')
+        lon = context.user_data.get('lon')
+        aksi = context.user_data.get('aksi')
+        jam_server = datetime.now(WIB).strftime('%H:%M:%S')
+
+        if aksi == 'datang':
+            simpan_datang(user_id, nama, lat, lon, foto_id)
+            await update.message.reply_text(f"✅ Absen datang berhasil jam {jam_server}\nFoto + lokasi tersimpan")
+        else:
+            simpan_pulang(user_id, lat, lon, foto_id)
+            await update.message.reply_text(f"✅ Absen pulang berhasil jam {jam_server}")
+
+        context.user_data.clear()
+        await start(update, context)
+        return
+
+    # 3. Handler alasan izin
+    if update.message.text and step == 'tunggu_alasan':
+        teks = update.message.text.strip()
+        status = context.user_data.get('status_izin')
         simpan_izin(user_id, nama, status, teks)
-        context.user_data.pop('status_izin', None)
+        context.user_data.clear()
         await update.message.reply_text(f"✅ Status {status} berhasil disimpan.\nAlasan: {teks}", reply_markup=get_keyboard(cek_absen(user_id)))
-        return ConversationHandler.END
+        return
 
-    if update.effective_user.id == ADMIN_ID:
+    # 4. Handler admin tambah libur
+    if update.message.text and step == 'tunggu_tanggal_libur' and user_id == ADMIN_ID:
         try:
-            tanggal = datetime.strptime(teks, '%Y-%m-%d').date()
+            tanggal = datetime.strptime(update.message.text.strip(), '%Y-%m-%d').date()
             query_db("INSERT INTO libur_nasional (tanggal) VALUES (%s) ON CONFLICT DO NOTHING", (tanggal,), commit=True)
-            await update.message.reply_text(f"✅ Tanggal {tanggal} ditandai sebagai libur nasional", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
+            await update.message.reply_text(f"✅ Tanggal {tanggal} ditandai sebagai libur nasional", reply_markup=get_keyboard(cek_absen(user_id)))
         except ValueError:
-            await update.message.reply_text("Format salah. Gunakan YYYY-MM-DD\nContoh: 2025-12-25", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
-        return ConversationHandler.END
-
-    return ConversationHandler.END
+            await update.message.reply_text("Format salah. Gunakan YYYY-MM-DD\nContoh: 2025-12-25", reply_markup=get_keyboard(cek_absen(user_id)))
+        context.user_data.clear()
+        return
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -580,28 +472,9 @@ def main():
     threading.Thread(target=run_flask, daemon=True).start()
 
     app = ApplicationBuilder().token(TOKEN).build()
-
-    # Kunci anti stack: per_message=False + allow_reentry=True
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button_handler)],
-        states={
-            REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_alasan)],
-            AWAITING_LOCATION: [MessageHandler(filters.LOCATION, terima_lokasi)],
-            AWAITING_PHOTO: [MessageHandler(filters.PHOTO, terima_foto)]
-        },
-        fallbacks=[],
-        per_message=False,
-        allow_reentry=True
-    )
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("rekap", rekap_command))
-    app.add_handler(CommandHandler("saya", saya_command))
-    app.add_handler(CommandHandler("export", export_command))
-    app.add_handler(CommandHandler("tim", tim_command))
-    app.add_handler(CommandHandler("admin", admin_command))
-    app.add_handler(conv_handler)
-    app.add_handler(CallbackQueryHandler(button_handler)) # buat tombol yang bukan bagian conv
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.LOCATION | filters.PHOTO | filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot jalan...")
     app.run_polling(drop_pending_updates=True, close_loop=False)
