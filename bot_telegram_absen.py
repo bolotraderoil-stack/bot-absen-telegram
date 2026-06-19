@@ -285,17 +285,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if button_id not in ['noop']:
         context.user_data.clear()
         if button_id == 'datang':
+    if button_id == 'datang':
     if status!= 'belum':
         await query.answer("Kamu sudah absen datang", show_alert=True)
         return
-    context.user_data['aksi'] = 'datang'
+        context.user_data['aksi'] = 'datang'
+        context.user_data['step'] = 'tunggu_lokasi'
+        keyboard = get_keyboard(status, step='lokasi')
+        await query.delete_message()  # <-- hapus pesan inline
+        await context.bot.send_message(user_id, "1/2 Kirim lokasi dulu", reply_markup=keyboard) # <-- kirim baru pake ReplyKeyboard
+        return
+    elif button_id == 'pulang':
+    if status not in ['datang', 'lembur']:
+        await query.answer("Kamu belum absen datang", show_alert=True)
+        return
+        context.user_data['aksi'] = 'pulang'
     context.user_data['step'] = 'tunggu_lokasi'
     keyboard = get_keyboard(status, step='lokasi')
     await query.delete_message()  # <-- hapus pesan inline
-    await context.bot.send_message(user_id, "1/2 Kirim lokasi dulu", reply_markup=keyboard) # <-- kirim baru pake ReplyKeyboard
+    await context.bot.send_message(user_id, "1/2 Kirim lokasi pulang", reply_markup=keyboard) # <-- kirim baru
     return
     
-elif button_id == 'pulang':
+    elif button_id == 'pulang':
     if status not in ['datang', 'lembur']:
         await query.answer("Kamu belum absen datang", show_alert=True)
         return
