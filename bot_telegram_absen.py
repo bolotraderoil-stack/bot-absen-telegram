@@ -411,12 +411,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"[DEBUG] Masuk handler lokasi")
             lokasi = update.message.location
             jarak = hitung_jarak(KANTOR_LAT, KANTOR_LON, lokasi.latitude, lokasi.longitude)
-            print(f"[DEBUG] Jarak:{int(jarak)}m Akurasi:{lokasi.accuracy}m")
+            akurasi = lokasi.horizontal_accuracy or 999
+            print(f"[DEBUG] Jarak:{int(jarak)}m Akurasi:{akurasi}m")
 
-            if lokasi.accuracy > 100:
-                await update.message.reply_text("❌ GPS akurasi jelek >100m. Matikan Fake GPS", reply_markup=ReplyKeyboardRemove())
-                context.user_data.clear()
-                return
+            if akurasi > 100:
+               await update.message.reply_text("❌ GPS akurasi jelek >100m. Matikan Fake GPS", reply_markup=ReplyKeyboardRemove())
+               context.user_data.clear()
+               return
             if jarak > RADIUS_METER:
                 await update.message.reply_text(f"❌ Kejauhan {int(jarak)}m dari kantor", reply_markup=ReplyKeyboardRemove())
                 context.user_data.clear()
