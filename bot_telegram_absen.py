@@ -4,6 +4,7 @@ import psycopg2
 import csv
 import io
 import math
+import asyncio
 import traceback
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -77,12 +78,12 @@ def home():
                 th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background: #4CAF50; color: white; }}
                 tr:hover {{ background: #f1f1f1; }}
-               .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-               .status-izin {{ color: orange; }}
-               .status-sakit {{ color: red; }}
-               .status-cuti {{ color: blue; }}
-               .status-lembur {{ color: purple; font-weight: bold; }}
-               .filter {{ text-align: center; margin-bottom: 20px; }}
+              .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+              .status-izin {{ color: orange; }}
+              .status-sakit {{ color: red; }}
+              .status-cuti {{ color: blue; }}
+              .status-lembur {{ color: purple; font-weight: bold; }}
+              .filter {{ text-align: center; margin-bottom: 20px; }}
                 input, button {{ padding: 8px; font-size: 16px; }}
                 @media (max-width: 600px) {{
                     table, thead, tbody, th, td, tr {{ display: block; }}
@@ -190,14 +191,22 @@ def simpan_datang(user_id, nama, lat=None, lon=None, foto_id=None):
     libur, jenis_libur = is_libur(hari_ini)
     status = 'lembur' if libur else 'hadir'
 
-    sql = """
-        INSERT INTO absensi (user_id, nama, tanggal, jam_datang, lat_datang, lon_datang, foto_datang, status, telat, alasan)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (user_id, tanggal) DO UPDATE SET jam_datang=%s, lat_datang=%s, lon_datang=%s, foto_datang=%s
-    """
-    params = (user_id, nama, hari_ini, jam_sekarang, lat, lon, foto_id, status, telat, jenis_libur, jam_sekarang, lat, lon, foto_id)
-    query_db(sql, params, commit=True)
-    return True, telat, libur, jenis_libur
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            sql = """
+                INSERT INTO absensi (user_id, nama, tanggal, jam_datang, lat_datang, lon_datang, foto_datang, status, telat, alasan)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, tanggal) DO UPDATE SET jam_datang=%s, lat_datang=%s, lon_datang=%s, foto_datang=%s
+                RETURNING id
+            """
+            params = (user_id, nama, hari_ini, jam_sekarang, lat, lon, foto_id, status, telat, jenis_libur, jam_sekarang, lat, lon, foto_id)
+            cur.execute(sql, params)
+            result = cur.fetchone()
+            conn.commit()
+            return result is not None, telat, libur, jenis_libur
+    finally:
+        conn.close()
 
 def simpan_pulang(user_id, lat=None, lon=None, foto_id=None):
     wib_now = datetime.now(WIB)
@@ -414,10 +423,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             akurasi = lokasi.horizontal_accuracy or 999
             print(f"[DEBUG] Jarak:{int(jarak)}m Akurasi:{akurasi}m")
 
-           # if akurasi > 500:
-            #   await update.message.reply_text("❌ GPS akurasi jelek >100m. Matikan Fake GPS", reply_markup=ReplyKeyboardRemove())
-             #  context.user_data.clear()
-             #  return
+            if akurasi > 500:
+                await update.message.reply_text("❌ Akurasi GPS terlalu jelek. Coba ke tempat terbuka/outdoor dulu ya", reply_markup=ReplyKeyboardRemove())
+                context.user_data.clear()
+                return
             if jarak > RADIUS_METER:
                 await update.message.reply_text(f"❌ Kejauhan {int(jarak)}m dari kantor", reply_markup=ReplyKeyboardRemove())
                 context.user_data.clear()
@@ -446,7 +455,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"✅ Absen pulang berhasil jam {jam_server}")
 
             context.user_data.clear()
-            await start(update, context)
+
+            # KUNCI ANTI GAGAL: Tunggu DB + retry 3x
+            status_baru = 'belum'
+            for i in range(3):
+                await asyncio.sleep(0.5)
+                status_baru = cek_absen(user_id)
+                if status_baru in ['datang', 'lembur', 'selesai']:
+                    break
+
+            keyboard_baru = get_keyboard(status_baru)
+            teks_baru = f"🤖 *Absen*\n📅 {datetime.now(WIB).strftime('%d/%m/%Y')}\n\n"
+
+            if status_baru in ['datang', 'lembur']:
+                teks_baru += "✅ Sudah absen datang\nSilakan absen pulang"
+            elif status_baru == 'selesai':
+                teks_baru += "✅ Absensi hari ini sudah selesai"
+            else:
+                teks_baru += "Waktunya absen datang"
+
+            await context.bot.send_message(user_id, teks_baru, reply_markup=keyboard_baru, parse_mode='Markdown')
             return
 
         if update.message.text and step == 'tunggu_alasan':
@@ -504,10 +532,10 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    # KUNCI ANTI STACK: URUTAN HANDLER HARUS GINI
-    app.add_handler(MessageHandler(filters.LOCATION, handle_message)) # 1. Lokasi duluan
-    app.add_handler(MessageHandler(filters.PHOTO, handle_message)) # 2. Foto kedua
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)) # 3. Teks terakhir
+    # URUTAN WAJIB: LOCATION -> PHOTO -> TEXT
+    app.add_handler(MessageHandler(filters.LOCATION, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("Bot jalan...")
     app.run_polling(drop_pending_updates=True, close_loop=False)
