@@ -4,12 +4,13 @@ import psycopg2
 import csv
 import io
 import math
+import asyncio
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, request
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile,
-    KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+    KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
@@ -24,8 +25,7 @@ KANTOR_LAT = float(os.getenv("KANTOR_LAT"))
 KANTOR_LON = float(os.getenv("KANTOR_LON"))
 RADIUS_METER = int(os.getenv("RADIUS_METER", "500"))
 
-REASON = 1
-user_states = {} # Ganti ConversationHandler pakai dict sederhana
+user_states = {}
 
 @app_flask.route('/')
 def home():
@@ -34,19 +34,9 @@ def home():
         with get_db() as conn:
             cur = conn.cursor()
             if tanggal:
-                cur.execute("""
-                    SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
-                    EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik,
-                    CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag
-                    FROM absensi WHERE tanggal=%s ORDER BY jam_datang DESC
-                """, (tanggal,))
+                cur.execute("SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat, EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik, CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag FROM absensi WHERE tanggal=%s ORDER BY jam_datang DESC", (tanggal,))
             else:
-                cur.execute("""
-                    SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
-                    EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik,
-                    CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag
-                    FROM absensi ORDER BY tanggal DESC, jam_datang DESC LIMIT 100
-                """)
+                cur.execute("SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat, EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik, CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag FROM absensi ORDER BY tanggal DESC, jam_datang DESC LIMIT 100")
             data = cur.fetchall()
 
         html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
@@ -68,8 +58,7 @@ def home():
             row_class = "telat" if telat_flag else ""
             status_class = f"status-{status}" if status else ""
             total_detik = int(total_detik) if total_detik else 0
-            h = total_detik // 3600
-            m = (total_detik % 3600) // 60
+            h, m = total_detik // 3600, (total_detik % 3600) // 60
             total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
             html += f"""<tr class="{row_class}"><td>{nama}</td><td>{tanggal}</td>
             <td>{datang.strftime('%H:%M:%S') if datang else '-'}</td>
@@ -165,7 +154,7 @@ def simpan_izin(user_id, nama, status, alasan):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_states.pop(user_id, None) # Reset state
+    user_states.pop(user_id, None)
     status = cek_absen(user_id)
     hari_ini = datetime.now(WIB).strftime('%d/%m/%Y')
     keyboard = get_keyboard(status)
@@ -189,20 +178,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nama = query.from_user.first_name
     status = cek_absen(user_id)
 
-    # Handler spesifik absen harus di atas
+    # FIX: Kirim pesan baru, jangan edit. Biar tidak error "Inline keyboard expected"
     if data == 'minta_lokasi_datang':
         user_states[user_id] = 'menunggu_lokasi_datang'
         keyboard = ReplyKeyboardMarkup([[KeyboardButton("📍 Kirim Lokasi Saya", request_location=True)]], resize_keyboard=True, one_time_keyboard=True)
-        await query.edit_message_text(f"Kirim lokasi Anda. Radius {RADIUS_METER}m dari kantor.", reply_markup=keyboard)
+        await context.bot.send_message(chat_id=user_id, text=f"📍 Kirim lokasi Anda sekarang.\nPastikan GPS aktif dan berada dalam radius {RADIUS_METER}m dari kantor.", reply_markup=keyboard)
         return
 
     if data == 'minta_lokasi_pulang':
         user_states[user_id] = 'menunggu_lokasi_pulang'
         keyboard = ReplyKeyboardMarkup([[KeyboardButton("📍 Kirim Lokasi Saya", request_location=True)]], resize_keyboard=True, one_time_keyboard=True)
-        await query.edit_message_text(f"Kirim lokasi Anda. Radius {RADIUS_METER}m dari kantor.", reply_markup=keyboard)
+        await context.bot.send_message(chat_id=user_id, text=f"📍 Kirim lokasi Anda sekarang.\nPastikan GPS aktif dan berada dalam radius {RADIUS_METER}m dari kantor.", reply_markup=keyboard)
         return
 
-    # Handler lain
+    # Sisanya boleh edit karena pesannya ada inline keyboard
     if data == 'izin':
         user_states[user_id] = 'menunggu_alasan_izin'
         await query.edit_message_text("Kirim alasan izin:")
@@ -220,7 +209,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await tim_command(update, context)
     elif data == 'download':
         bulan_ini = datetime.now(WIB).strftime('%Y-%m')
-        await query.edit_message_text(f"📥 `/export {bulan_ini}`")
+        await query.edit_message_text(f"📥 Ketik: `/export {bulan_ini}`", parse_mode='Markdown')
     elif data == 'admin':
         await admin_command(update, context)
     elif data == 'admin_belum':
@@ -258,7 +247,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Sudah absen datang.", reply_markup=ReplyKeyboardRemove())
         else:
             success, telat, libur, jenis_libur = simpan_datang(user_id, nama, lokasi.latitude, lokasi.longitude)
-            teks = f"✅ Datang berhasil!\nJarak: {int(jarak)}m"
+            teks = f"✅ Datang berhasil!\nJarak: {int(jarak)}m\nWaktu: {datetime.now(WIB).strftime('%H:%M:%S')}"
             if libur: teks += f"\n💜 LEMBUR - {jenis_libur}"
             if telat: teks += "\n⚠️ Telat!"
             await update.message.reply_text(teks, reply_markup=ReplyKeyboardRemove())
@@ -268,7 +257,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Belum absen datang.", reply_markup=ReplyKeyboardRemove())
         else:
             success = simpan_pulang(user_id, lokasi.latitude, lokasi.longitude)
-            await update.message.reply_text(f"🚪 Pulang berhasil!\nJarak: {int(jarak)}m" if success else "Gagal", reply_markup=ReplyKeyboardRemove())
+            await update.message.reply_text(f"🚪 Pulang berhasil!\nJarak: {int(jarak)}m" if success else "Gagal pulang", reply_markup=ReplyKeyboardRemove())
 
     user_states.pop(user_id, None)
     await start(update, context)
@@ -387,6 +376,13 @@ def main():
         print("Error: TOKEN, SUPABASE_URL, KANTOR_LAT, KANTOR_LON wajib diisi")
         return
 
+    # FIX Conflict: hapus webhook + update pending
+    async def delete_webhook():
+        bot = Bot(TOKEN)
+        await bot.delete_webhook(drop_pending_updates=True)
+        await bot.session.close()
+    asyncio.run(delete_webhook())
+
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS absensi (id SERIAL PRIMARY KEY, user_id BIGINT NOT NULL, nama TEXT, tanggal DATE NOT NULL, jam_datang TIME, jam_pulang TIME, lat_datang DOUBLE PRECISION, lon_datang DOUBLE PRECISION, lat_pulang DOUBLE PRECISION, lon_pulang DOUBLE PRECISION, status TEXT DEFAULT 'hadir', alasan TEXT, telat BOOLEAN DEFAULT false, UNIQUE(user_id, tanggal))")
@@ -396,7 +392,6 @@ def main():
     threading.Thread(target=run_flask, daemon=True).start()
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # URUTAN KRITIS: spesifik dulu, umum belakangan
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.LOCATION, handle_location))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
