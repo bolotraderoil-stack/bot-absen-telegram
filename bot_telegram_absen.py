@@ -76,12 +76,12 @@ def home():
                 th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background: #4CAF50; color: white; }}
                 tr:hover {{ background: #f1f1f1; }}
-              .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-              .status-izin {{ color: orange; }}
-              .status-sakit {{ color: red; }}
-              .status-cuti {{ color: blue; }}
-              .status-lembur {{ color: purple; font-weight: bold; }}
-              .filter {{ text-align: center; margin-bottom: 20px; }}
+             .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+             .status-izin {{ color: orange; }}
+             .status-sakit {{ color: red; }}
+             .status-cuti {{ color: blue; }}
+             .status-lembur {{ color: purple; font-weight: bold; }}
+             .filter {{ text-align: center; margin-bottom: 20px; }}
                 input, button {{ padding: 8px; font-size: 16px; }}
                 @media (max-width: 600px) {{
                     table, thead, tbody, th, td, tr {{ display: block; }}
@@ -250,7 +250,7 @@ def get_data_saya(user_id):
     return query_db(sql, (user_id, tujuh_hari_lalu), fetchall=True) or []
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear() # reset state manual
+    context.user_data.clear()
     user_id = update.effective_user.id
     status = cek_absen(user_id)
     wib_now = datetime.now(WIB)
@@ -281,47 +281,38 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     button_id = query.data
     status = cek_absen(user_id)
 
-    # Reset state kalau pencet tombol
     if button_id not in ['noop']:
         context.user_data.clear()
-        if button_id == 'datang':
+
     if button_id == 'datang':
-    if status!= 'belum':
-        await query.answer("Kamu sudah absen datang", show_alert=True)
-        return
+        if status!= 'belum':
+            await query.answer("Kamu sudah absen datang", show_alert=True)
+            return
         context.user_data['aksi'] = 'datang'
         context.user_data['step'] = 'tunggu_lokasi'
         keyboard = get_keyboard(status, step='lokasi')
-        await query.delete_message()  # <-- hapus pesan inline
-        await context.bot.send_message(user_id, "1/2 Kirim lokasi dulu", reply_markup=keyboard) # <-- kirim baru pake ReplyKeyboard
+        await query.delete_message()
+        await context.bot.send_message(user_id, "1/2 Kirim lokasi dulu", reply_markup=keyboard)
         return
+
     elif button_id == 'pulang':
-    if status not in ['datang', 'lembur']:
-        await query.answer("Kamu belum absen datang", show_alert=True)
-        return
+        if status not in ['datang', 'lembur']:
+            await query.answer("Kamu belum absen datang", show_alert=True)
+            return
         context.user_data['aksi'] = 'pulang'
-    context.user_data['step'] = 'tunggu_lokasi'
-    keyboard = get_keyboard(status, step='lokasi')
-    await query.delete_message()  # <-- hapus pesan inline
-    await context.bot.send_message(user_id, "1/2 Kirim lokasi pulang", reply_markup=keyboard) # <-- kirim baru
-    return
-    
-    elif button_id == 'pulang':
-    if status not in ['datang', 'lembur']:
-        await query.answer("Kamu belum absen datang", show_alert=True)
+        context.user_data['step'] = 'tunggu_lokasi'
+        keyboard = get_keyboard(status, step='lokasi')
+        await query.delete_message()
+        await context.bot.send_message(user_id, "1/2 Kirim lokasi pulang", reply_markup=keyboard)
         return
-    context.user_data['aksi'] = 'pulang'
-    context.user_data['step'] = 'tunggu_lokasi'
-    keyboard = get_keyboard(status, step='lokasi')
-    await query.delete_message()  # <-- hapus pesan inline
-    await context.bot.send_message(user_id, "1/2 Kirim lokasi pulang", reply_markup=keyboard) # <-- kirim baru
-    return
- elif button_id in ['izin', 'sakit', 'cuti']:
-    context.user_data['step'] = 'tunggu_alasan'
-    context.user_data['status_izin'] = button_id
-    await query.delete_message()
-    await context.bot.send_message(user_id, f"Kirim alasan {button_id}:", reply_markup=get_keyboard(status))
-    return
+
+    elif button_id in ['izin', 'sakit', 'cuti']:
+        context.user_data['step'] = 'tunggu_alasan'
+        context.user_data['status_izin'] = button_id
+        await query.delete_message()
+        await context.bot.send_message(user_id, f"Kirim alasan {button_id}:", reply_markup=get_keyboard(status))
+        return
+
     elif button_id == 'rekap':
         hari_hadir, total_jam, total_telat, rata_rata = get_rekap_bulanan(user_id)
         bulan_nama = datetime.now(WIB).strftime('%B %Y')
@@ -389,7 +380,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id!= ADMIN_ID:
             return
         context.user_data['step'] = 'tunggu_tanggal_libur'
-        await query.edit_message_text("Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2025-12-25", reply_markup=get_keyboard(status))
+        await query.delete_message()
+        await context.bot.send_message(user_id, "Kirim tanggal libur format YYYY-MM-DD.\nContoh: 2025-12-25", reply_markup=get_keyboard(status))
+        return
 
     elif button_id == 'noop':
         context.user_data.clear()
@@ -400,7 +393,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nama = update.effective_user.first_name
     step = context.user_data.get('step')
 
-    # 1. Handler lokasi
     if update.message.location and step == 'tunggu_lokasi':
         lokasi = update.message.location
         jarak = hitung_jarak(KANTOR_LAT, KANTOR_LON, lokasi.latitude, lokasi.longitude)
@@ -420,7 +412,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("2/2 Sekarang kirim selfie wajah", reply_markup=ReplyKeyboardRemove())
         return
 
-    # 2. Handler foto
     if update.message.photo and step == 'tunggu_foto':
         foto = update.message.photo[-1]
         foto_id = foto.file_id
@@ -440,7 +431,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start(update, context)
         return
 
-    # 3. Handler alasan izin
     if update.message.text and step == 'tunggu_alasan':
         teks = update.message.text.strip()
         status = context.user_data.get('status_izin')
@@ -449,7 +439,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Status {status} berhasil disimpan.\nAlasan: {teks}", reply_markup=get_keyboard(cek_absen(user_id)))
         return
 
-    # 4. Handler admin tambah libur
     if update.message.text and step == 'tunggu_tanggal_libur' and user_id == ADMIN_ID:
         try:
             tanggal = datetime.strptime(update.message.text.strip(), '%Y-%m-%d').date()
