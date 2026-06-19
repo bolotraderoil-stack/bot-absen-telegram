@@ -14,7 +14,7 @@ app_flask = Flask(__name__)
 WIB = ZoneInfo("Asia/Jakarta")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
-# Env untuk GPS
+# Env untuk GPS - isi di Render
 KANTOR_LAT = float(os.getenv("KANTOR_LAT", "-6.9667"))
 KANTOR_LON = float(os.getenv("KANTOR_LON", "110.4167"))
 RADIUS_METER = int(os.getenv("RADIUS_METER", "500"))
@@ -81,12 +81,12 @@ def home():
                 th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background: #4CAF50; color: white; }}
                 tr:hover {{ background: #f1f1f1; }}
-               .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-               .status-izin {{ color: orange; }}
-               .status-sakit {{ color: red; }}
-               .status-cuti {{ color: blue; }}
-               .status-lembur {{ color: purple; font-weight: bold; }}
-               .filter {{ text-align: center; margin-bottom: 20px; }}
+              .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+              .status-izin {{ color: orange; }}
+              .status-sakit {{ color: red; }}
+              .status-cuti {{ color: blue; }}
+              .status-lembur {{ color: purple; font-weight: bold; }}
+              .filter {{ text-align: center; margin-bottom: 20px; }}
                 input, button {{ padding: 8px; font-size: 16px; }}
                 @media (max-width: 600px) {{
                     table, thead, tbody, th, td, tr {{ display: block; }}
@@ -382,12 +382,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
     await update.message.reply_text("👑 *Admin Panel*", reply_markup=keyboard, parse_mode='Markdown')
 
+# Handler tombol doang, nggak ngurus lokasi/foto
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message and update.message.location:
-        return await terima_lokasi(update, context)
-    if update.message and update.message.photo:
-        return await terima_foto(update, context)
-
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -493,6 +489,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         await query.edit_message_text("Menu ditutup. Ketik /start untuk buka lagi.", reply_markup=None)
 
+# Handler lokasi khusus untuk ConversationHandler
 async def terima_lokasi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lokasi = update.message.location
     user_id = update.effective_user.id
@@ -512,6 +509,7 @@ async def terima_lokasi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("2/2 Sekarang kirim selfie wajah", reply_markup=ReplyKeyboardRemove())
     return AWAITING_PHOTO
 
+# Handler foto khusus untuk ConversationHandler
 async def terima_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     foto = update.message.photo[-1]
     foto_id = foto.file_id
@@ -582,6 +580,8 @@ def main():
     threading.Thread(target=run_flask, daemon=True).start()
 
     app = ApplicationBuilder().token(TOKEN).build()
+
+    # Kunci anti stack: per_message=False + allow_reentry=True
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(button_handler)],
         states={
@@ -589,7 +589,9 @@ def main():
             AWAITING_LOCATION: [MessageHandler(filters.LOCATION, terima_lokasi)],
             AWAITING_PHOTO: [MessageHandler(filters.PHOTO, terima_foto)]
         },
-        fallbacks=[]
+        fallbacks=[],
+        per_message=False,
+        allow_reentry=True
     )
 
     app.add_handler(CommandHandler("start", start))
@@ -599,9 +601,7 @@ def main():
     app.add_handler(CommandHandler("tim", tim_command))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(conv_handler)
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.LOCATION, terima_lokasi))
-    app.add_handler(MessageHandler(filters.PHOTO, terima_foto))
+    app.add_handler(CallbackQueryHandler(button_handler)) # buat tombol yang bukan bagian conv
 
     print("Bot jalan...")
     app.run_polling(drop_pending_updates=True, close_loop=False)
