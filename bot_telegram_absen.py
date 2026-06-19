@@ -423,10 +423,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             akurasi = lokasi.horizontal_accuracy or 999
             print(f"[DEBUG] Jarak:{int(jarak)}m Akurasi:{akurasi}m")
 
-            if akurasi > 500:
-                await update.message.reply_text("❌ Akurasi GPS terlalu jelek. Coba ke tempat terbuka/outdoor dulu ya", reply_markup=ReplyKeyboardRemove())
-                context.user_data.clear()
-                return
+           # if akurasi > 500:
+             #   await update.message.reply_text("❌ Akurasi GPS terlalu jelek. Coba ke tempat terbuka/outdoor dulu ya", reply_markup=ReplyKeyboardRemove())
+               # context.user_data.clear()
+                #return
             if jarak > RADIUS_METER:
                 await update.message.reply_text(f"❌ Kejauhan {int(jarak)}m dari kantor", reply_markup=ReplyKeyboardRemove())
                 context.user_data.clear()
