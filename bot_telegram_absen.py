@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, request
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile,
-    KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot
+    KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
@@ -42,13 +42,10 @@ def home():
         html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>body{{font-family:Arial,sans-serif;padding:20px;background:#f5f5f5;}}
-        h2{{text-align:center;}}table{{width:100%;border-collapse:collapse;background:white;box-shadow:0 2px 5px rgba(0,0,0,0.1);}}
+        h2{{text-align:center;}}table{{width:100%;border-collapse:collapse;background:white;}}
         th,td{{padding:12px;text-align:left;border-bottom:1px solid #ddd;}}th{{background:#4CAF50;color:white;}}
-        tr:hover{{background:#f1f1f1;}}.telat{{background:#ffebee;color:#c62828;font-weight:bold;}}
-       .status-izin{{color:orange;}}.status-sakit{{color:red;}}.status-cuti{{color:blue;}}
-       .status-lembur{{color:purple;font-weight:bold;}}.filter{{text-align:center;margin-bottom:20px;}}
-        input,button{{padding:8px;font-size:16px;}}</style></head><body>
-        <h2>📋 Data Absensi</h2><div class="filter"><form method="get">
+       .telat{{background:#ffebee;color:#c62828;font-weight:bold;}}</style></head><body>
+        <h2>📋 Data Absensi</h2><div style="text-align:center;margin-bottom:20px;"><form method="get">
         <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
         <button type="submit">Filter</button><a href="/"><button type="button">Reset</button></a></form></div>
         <table><thead><tr><th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th><th>Status</th><th>Alasan</th><th>Total Jam</th></tr></thead><tbody>"""
@@ -56,15 +53,13 @@ def home():
         for row in data:
             nama, tanggal, datang, pulang, status, alasan, telat_db, total_detik, telat_flag = row
             row_class = "telat" if telat_flag else ""
-            status_class = f"status-{status}" if status else ""
             total_detik = int(total_detik) if total_detik else 0
             h, m = total_detik // 3600, (total_detik % 3600) // 60
             total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
             html += f"""<tr class="{row_class}"><td>{nama}</td><td>{tanggal}</td>
             <td>{datang.strftime('%H:%M:%S') if datang else '-'}</td>
             <td>{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
-            <td class="{status_class}">{status or 'hadir'}</td>
-            <td>{alasan or '-'}</td><td>{total_jam}</td></tr>"""
+            <td>{status or 'hadir'}</td><td>{alasan or '-'}</td><td>{total_jam}</td></tr>"""
 
         html += "</tbody></table></body></html>"
         return html
@@ -82,8 +77,7 @@ def get_db():
         conn.close()
 
 def is_libur(tanggal):
-    if tanggal.weekday() == 6:
-        return True, "Minggu"
+    if tanggal.weekday() == 6: return True, "Minggu"
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT 1 FROM libur_nasional WHERE tanggal=%s", (tanggal,))
@@ -175,23 +169,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
     data = query.data
-    nama = query.from_user.first_name
     status = cek_absen(user_id)
 
-    # FIX: Kirim pesan baru, jangan edit. Biar tidak error "Inline keyboard expected"
     if data == 'minta_lokasi_datang':
         user_states[user_id] = 'menunggu_lokasi_datang'
         keyboard = ReplyKeyboardMarkup([[KeyboardButton("📍 Kirim Lokasi Saya", request_location=True)]], resize_keyboard=True, one_time_keyboard=True)
-        await context.bot.send_message(chat_id=user_id, text=f"📍 Kirim lokasi Anda sekarang.\nPastikan GPS aktif dan berada dalam radius {RADIUS_METER}m dari kantor.", reply_markup=keyboard)
+        await context.bot.send_message(chat_id=user_id, text=f"📍 Kirim lokasi Anda.\nRadius {RADIUS_METER}m dari kantor.", reply_markup=keyboard)
         return
 
     if data == 'minta_lokasi_pulang':
         user_states[user_id] = 'menunggu_lokasi_pulang'
         keyboard = ReplyKeyboardMarkup([[KeyboardButton("📍 Kirim Lokasi Saya", request_location=True)]], resize_keyboard=True, one_time_keyboard=True)
-        await context.bot.send_message(chat_id=user_id, text=f"📍 Kirim lokasi Anda sekarang.\nPastikan GPS aktif dan berada dalam radius {RADIUS_METER}m dari kantor.", reply_markup=keyboard)
+        await context.bot.send_message(chat_id=user_id, text=f"📍 Kirim lokasi Anda.\nRadius {RADIUS_METER}m dari kantor.", reply_markup=keyboard)
         return
 
-    # Sisanya boleh edit karena pesannya ada inline keyboard
     if data == 'izin':
         user_states[user_id] = 'menunggu_alasan_izin'
         await query.edit_message_text("Kirim alasan izin:")
@@ -376,11 +367,10 @@ def main():
         print("Error: TOKEN, SUPABASE_URL, KANTOR_LAT, KANTOR_LON wajib diisi")
         return
 
-    # FIX Conflict: hapus webhook + update pending
+    # FIX Conflict tanpa error session
     async def delete_webhook():
-        bot = Bot(TOKEN)
-        await bot.delete_webhook(drop_pending_updates=True)
-        await bot.session.close()
+        app_temp = ApplicationBuilder().token(TOKEN).build()
+        await app_temp.bot.delete_webhook(drop_pending_updates=True)
     asyncio.run(delete_webhook())
 
     with get_db() as conn:
