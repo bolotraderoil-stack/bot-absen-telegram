@@ -6,24 +6,31 @@ import io
 import math
 import asyncio
 import traceback
+import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
+# ===== LOGGING WAJIB BUAT RENDER =====
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 app_flask = Flask(__name__)
 WIB = ZoneInfo("Asia/Jakarta")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
-KANTOR_LAT = float(os.getenv("KANTOR_LAT", "-6.9667"))
-KANTOR_LON = float(os.getenv("KANTOR_LON", "110.4167"))
+KANTOR_LAT = float(os.getenv("KANTOR_LAT", "-7.578106"))
+KANTOR_LON = float(os.getenv("KANTOR_LON", "110.682429"))
 RADIUS_METER = int(os.getenv("RADIUS_METER", "500"))
 
 def query_db(query, params=(), fetchone=False, fetchall=False, commit=False):
-    conn = get_db()
+    conn = None
     try:
+        conn = get_db()
         with conn.cursor() as cur:
+            logger.info(f"[SQL] {query[:80]}... Params:{params}")
             cur.execute(query, params)
             if commit:
                 conn.commit()
@@ -33,10 +40,11 @@ def query_db(query, params=(), fetchone=False, fetchall=False, commit=False):
             if fetchall:
                 return cur.fetchall()
     except Exception as e:
-        print(f"DB Error: {e}")
+        logger.error(f"[DB ERROR] {e}", exc_info=True)
         return None
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 @app_flask.route('/')
 def home():
@@ -78,12 +86,12 @@ def home():
                 th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background: #4CAF50; color: white; }}
                 tr:hover {{ background: #f1f1f1; }}
-              .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
-              .status-izin {{ color: orange; }}
-              .status-sakit {{ color: red; }}
-              .status-cuti {{ color: blue; }}
-              .status-lembur {{ color: purple; font-weight: bold; }}
-              .filter {{ text-align: center; margin-bottom: 20px; }}
+             .telat {{ background: #ffebee; color: #c62828; font-weight: bold; }}
+             .status-izin {{ color: orange; }}
+             .status-sakit {{ color: red; }}
+             .status-cuti {{ color: blue; }}
+             .status-lembur {{ color: purple; font-weight: bold; }}
+             .filter {{ text-align: center; margin-bottom: 20px; }}
                 input, button {{ padding: 8px; font-size: 16px; }}
                 @media (max-width: 600px) {{
                     table, thead, tbody, th, td, tr {{ display: block; }}
@@ -137,6 +145,7 @@ def home():
         return html
 
     except Exception as e:
+        logger.error(f"[WEB ERROR] {e}", exc_info=True)
         return f"<h2>Error Server</h2><pre>{e}</pre>", 500
 
 def get_db():
@@ -204,7 +213,12 @@ def simpan_datang(user_id, nama, lat=None, lon=None, foto_id=None):
             cur.execute(sql, params)
             result = cur.fetchone()
             conn.commit()
+            logger.info(f"[DB SAVE] Datang user:{user_id} id:{result[0] if result else 'None'}")
             return result is not None, telat, libur, jenis_libur
+    except Exception as e:
+        logger.error(f"[DB SAVE ERROR] {e}", exc_info=True)
+        conn.rollback()
+        return False, False, False, None
     finally:
         conn.close()
 
@@ -214,6 +228,7 @@ def simpan_pulang(user_id, lat=None, lon=None, foto_id=None):
     jam_sekarang = wib_now.time()
     sql = "UPDATE absensi SET jam_pulang=%s, lat_pulang=%s, lon_pulang=%s, foto_pulang=%s WHERE user_id=%s AND tanggal=%s AND jam_datang IS NOT NULL AND jam_pulang IS NULL"
     updated = query_db(sql, (jam_sekarang, lat, lon, foto_id, user_id, hari_ini), commit=True)
+    logger.info(f"[DB UPDATE] Pulang user:{user_id} rows:{updated}")
     return updated > 0 if updated else False
 
 def simpan_izin(user_id, nama, status, alasan):
@@ -292,7 +307,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         button_id = query.data
         status = cek_absen(user_id)
 
-        print(f"[DEBUG BUTTON] User:{user_id} Button:{button_id}")
+        logger.info(f"[BUTTON] User:{user_id} Button:{button_id} Status:{status}")
 
         if button_id not in ['noop']:
             context.user_data.clear()
@@ -303,7 +318,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             context.user_data['aksi'] = 'datang'
             context.user_data['step'] = 'tunggu_lokasi'
-            print(f"[DEBUG SET] User {user_id} step = tunggu_lokasi")
+            logger.info(f"[STATE] User {user_id} step = tunggu_lokasi")
             keyboard = get_keyboard(status, step='lokasi')
             await query.delete_message()
             await context.bot.send_message(user_id, "1/2 Kirim lokasi dulu", reply_markup=keyboard)
@@ -315,7 +330,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             context.user_data['aksi'] = 'pulang'
             context.user_data['step'] = 'tunggu_lokasi'
-            print(f"[DEBUG SET] User {user_id} step = tunggu_lokasi")
+            logger.info(f"[STATE] User {user_id} step = tunggu_lokasi")
             keyboard = get_keyboard(status, step='lokasi')
             await query.delete_message()
             await context.bot.send_message(user_id, "1/2 Kirim lokasi pulang", reply_markup=keyboard)
@@ -404,8 +419,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Menu ditutup. Ketik /start untuk buka lagi.", reply_markup=None)
 
     except Exception as e:
-        print(f"[ERROR BUTTON] {e}")
-        traceback.print_exc()
+        logger.error(f"[BUTTON ERROR] {e}", exc_info=True)
+        await query.answer("Error server", show_alert=True)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -414,19 +429,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         step = context.user_data.get('step')
 
         content_type = 'location' if update.message.location else 'photo' if update.message.photo else 'text'
-        print(f"[DEBUG MSG] User:{user_id} Step:{step} Type:{content_type}")
+        logger.info(f"[MESSAGE] User:{user_id} Step:{step} Type:{content_type}")
 
         if update.message.location and step == 'tunggu_lokasi':
-            print(f"[DEBUG] Masuk handler lokasi")
+            logger.info(f"[LOC] Masuk handler lokasi")
             lokasi = update.message.location
             jarak = hitung_jarak(KANTOR_LAT, KANTOR_LON, lokasi.latitude, lokasi.longitude)
             akurasi = lokasi.horizontal_accuracy or 999
-            print(f"[DEBUG] Jarak:{int(jarak)}m Akurasi:{akurasi}m")
+            logger.info(f"[LOC] Jarak:{int(jarak)}m Akurasi:{akurasi}m")
 
-           # if akurasi > 500:
-             #   await update.message.reply_text("❌ Akurasi GPS terlalu jelek. Coba ke tempat terbuka/outdoor dulu ya", reply_markup=ReplyKeyboardRemove())
-               # context.user_data.clear()
-                #return
+            if akurasi > 500:
+                await update.message.reply_text("❌ Akurasi GPS terlalu jelek. Coba ke tempat terbuka/outdoor dulu ya", reply_markup=ReplyKeyboardRemove())
+                context.user_data.clear()
+                return
             if jarak > RADIUS_METER:
                 await update.message.reply_text(f"❌ Kejauhan {int(jarak)}m dari kantor", reply_markup=ReplyKeyboardRemove())
                 context.user_data.clear()
@@ -435,11 +450,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['lat'] = lokasi.latitude
             context.user_data['lon'] = lokasi.longitude
             context.user_data['step'] = 'tunggu_foto'
+            logger.info(f"[STATE] User {user_id} step = tunggu_foto")
             await update.message.reply_text("2/2 Sekarang kirim selfie wajah", reply_markup=ReplyKeyboardRemove())
             return
 
         if update.message.photo and step == 'tunggu_foto':
-            print(f"[DEBUG] Masuk handler foto")
+            logger.info(f"[PHOTO] Masuk handler foto")
             foto = update.message.photo[-1]
             foto_id = foto.file_id
             lat = context.user_data.get('lat')
@@ -448,19 +464,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             jam_server = datetime.now(WIB).strftime('%H:%M:%S')
 
             if aksi == 'datang':
-                simpan_datang(user_id, nama, lat, lon, foto_id)
+                sukses, telat, libur, jenis_libur = simpan_datang(user_id, nama, lat, lon, foto_id)
+                if not sukses:
+                    raise Exception("Gagal simpan ke DB")
                 await update.message.reply_text(f"✅ Absen datang berhasil jam {jam_server}\nFoto + lokasi tersimpan")
             else:
-                simpan_pulang(user_id, lat, lon, foto_id)
+                sukses = simpan_pulang(user_id, lat, lon, foto_id)
+                if not sukses:
+                    raise Exception("Gagal update pulang")
                 await update.message.reply_text(f"✅ Absen pulang berhasil jam {jam_server}")
 
             context.user_data.clear()
 
-            # KUNCI ANTI GAGAL: Tunggu DB + retry 3x
+            # KUNCI: Tunggu DB + retry 3x
             status_baru = 'belum'
             for i in range(3):
                 await asyncio.sleep(0.5)
                 status_baru = cek_absen(user_id)
+                logger.info(f"[RETRY {i+1}] Status:{status_baru}")
                 if status_baru in ['datang', 'lembur', 'selesai']:
                     break
 
@@ -478,7 +499,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if update.message.text and step == 'tunggu_alasan':
-            print(f"[DEBUG] Masuk handler alasan")
+            logger.info(f"[TEXT] Masuk handler alasan")
             teks = update.message.text.strip()
             status = context.user_data.get('status_izin')
             simpan_izin(user_id, nama, status, teks)
@@ -487,7 +508,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if update.message.text and step == 'tunggu_tanggal_libur' and user_id == ADMIN_ID:
-            print(f"[DEBUG] Masuk handler libur admin")
+            logger.info(f"[ADMIN] Masuk handler libur")
             try:
                 tanggal = datetime.strptime(update.message.text.strip(), '%Y-%m-%d').date()
                 query_db("INSERT INTO libur_nasional (tanggal) VALUES (%s) ON CONFLICT DO NOTHING", (tanggal,), commit=True)
@@ -498,9 +519,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     except Exception as e:
-        print(f"[ERROR FATAL] {e}")
-        traceback.print_exc()
-        await update.message.reply_text("❌ Error server. Ketik /start buat reset")
+        logger.error(f"[FATAL ERROR] {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Error: {type(e).__name__}\n{str(e)[:150]}\n\nKetik /start buat reset")
         context.user_data.clear()
 
 def run_flask():
@@ -512,7 +532,7 @@ def main():
     SUPABASE_URL = os.getenv("SUPABASE_URL")
 
     if not TOKEN or not SUPABASE_URL:
-        print("Error: TOKEN dan SUPABASE_URL harus diset")
+        logger.error("Error: TOKEN dan SUPABASE_URL harus diset")
         return
 
     query_db("""
@@ -524,7 +544,7 @@ def main():
         )
     """, commit=True)
     query_db("CREATE TABLE IF NOT EXISTS libur_nasional (tanggal DATE PRIMARY KEY)", commit=True)
-    print("Database siap")
+    logger.info("Database siap")
 
     threading.Thread(target=run_flask, daemon=True).start()
 
@@ -532,12 +552,12 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    # URUTAN WAJIB: LOCATION -> PHOTO -> TEXT
+    # URUTAN WAJIB
     app.add_handler(MessageHandler(filters.LOCATION, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Bot jalan...")
+    logger.info("Bot jalan...")
     app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
