@@ -229,7 +229,7 @@ def home_genset():
 <div class='card-body'>
 <p><b>Jam:</b> {mulai.strftime('%H:%M') if mulai else '-'} &rarr; {selesai.strftime('%H:%M') if selesai else '-'}</p>
 <p><b>Durasi:</b> {durasi_str}</p>
-<p><b>BBM:</b> {awal}% → {akhir}%</p>
+<p><b>BBM:</b> {awal}% - {akhir}%</p>
 <p><b>Pakai:</b> {pakai}% | <b>Sisa:</b> {sisa}%</p>
 </div>
 </div>
