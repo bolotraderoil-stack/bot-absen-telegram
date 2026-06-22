@@ -224,16 +224,16 @@ def home_genset():
             # CARD buat mobile
             card_class = "card-low" if is_low else ""
             cards += f"""
-            <div class='card {card_class}'>
-                <div class='card-header'>{tanggal} - {petugas}</div>
-                <div class='card-body'>
-                    <p><b>Jam:</b> {mulai.strftime('%H:%M') if mulai else '-'} → {selesai.strftime('%H:%M') if selesai else '-'}</p>
-                    <p><b>Durasi:</b> {durasi_str}</p>
-                    <p><b>BBM:</b> {awal}% → {akhir}%</p>
-                    <p><b>Pakai:</b> {pakai}% | <b>Sisa:</b> {sisa}%</p>
-                </div>
-            </div>
-            """
+<div class='card {card_class}'>
+<div class='card-header'>{tanggal} - {petugas}</div>
+<div class='card-body'>
+<p><b>Jam:</b> {mulai.strftime('%H:%M') if mulai else '-'} → {selesai.strftime('%H:%M') if selesai else '-'}</p>
+<p><b>Durasi:</b> {durasi_str}</p>
+<p><b>BBM:</b> {awal}% → {akhir}%</p>
+<p><b>Pakai:</b> {pakai}% | <b>Sisa:</b> {sisa}%</p>
+</div>
+</div>
+"""
 
         option_petugas = '<option value="">Semua Petugas</option>'
         for p in list_petugas:
