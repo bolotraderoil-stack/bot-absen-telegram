@@ -1,9 +1,9 @@
-import json
 import os
 import threading
 import psycopg2
 import csv
 import io
+import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, request, Response
@@ -19,7 +19,7 @@ GEN_MULAI, GEN_BBM_AWAL, GEN_BBM_AKHIR = range(3)
 def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
-# ===== WEB ABSEN: FILTER NAMA + BULAN =====
+# ===== WEB ABSEN =====
 @app_flask.route('/')
 def home():
     try:
@@ -92,7 +92,7 @@ td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-# ===== WEB GENSET: RESPONSIVE + GRAFIK + DURASI + MERAH <30% =====
+# ===== WEB GENSET: RESPONSIVE + GRAFIK FIX + DURASI =====
 @app_flask.route('/genset')
 def home_genset():
     try:
@@ -164,117 +164,7 @@ def home_genset():
             selected = 'selected' if p == nama else ''
             option_petugas += f'<option value="{p}" {selected}>{p}</option>'
 
-        navbar = """<nav style="background:#FF9800;padding:15px;text-align:center">
-        <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
-        <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a></nav>"""
-
-        html = navbar + f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Log Genset</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
-*{{
-box-sizing:border-box
-}}
-body{{font-family:'Segoe UI',Arial,sans-serif;padding:15px;background:#f5f5f5;margin:0}}
-h2{{text-align:center;color:#333;margin-bottom:10px}}
-.container{{max-width:1200px;margin:0 auto}}
-.filter{{text-align:center;margin:20px 0;display:flex;flex-wrap:wrap;gap:10px;justify-content:center}}
-input,select,button{{padding:10px 12px;font-size:16px;border-radius:8px;border:1px solid #ddd;flex:1 1 150px;max-width:200px}}
-button{{background:#FF9800;color:white;border:none;cursor:pointer;font-weight:bold}}
-button:hover{{background:#e68900}}
-.chart-container{{background:white;padding:20px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin:20px 0;height:400px}}
-.alert-low{{background:#ffebee;color:#c62828;padding:12px;border-radius:8px;text-align:center;font-weight:bold;margin:15px 0;border:1px solid #ef9a9a}}
-.table-wrapper{{overflow-x:auto}}
-table{{width:100%;border-collapse:collapse;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1)}}
-th,td{{padding:14px;text-align:center;border-bottom:1px solid #eee}}
-th{{background:#FF9800;color:white;font-weight:600;position:sticky;top:0}}
-tr:hover{{background:#fff3e0}}
-.cards-container{{display:none;gap:12px}}
-.card{{background:white;border-radius:12px;padding:15px;box-shadow:0 2px 6px rgba(0,0,0,0.1)}}
-.card-header{{font-weight:bold;font-size:18px;margin-bottom:10px;color:#333}}
-.card-body p{{margin:8px 0;font-size:15px}}
-@media (max-width:768px){{
-body{{padding:10px}}
-h2{{font-size:22px}}
-.filter input,.filter select,.filter button{{max-width:100%;flex:1 1 100%}}
-.chart-container{{padding:12px;height:300px}}
-.table-wrapper{{display:none}}
-.cards-container{{display:grid;grid-template-columns:1fr}}
-@media (min-width:769px){{
-.cards-cimport json # TARUH DI ATAS BARIS IMPORT LAINNYA
-
-@app_flask.route('/genset')
-def home_genset():
-    try:
-        tanggal = request.args.get('tanggal')
-        nama = request.args.get('nama', '')
-        conn = get_db()
-        cur = conn.cursor()
-
-        cur.execute("SELECT DISTINCT petugas FROM genset_log ORDER BY petugas")
-        list_petugas = [r[0] for r in cur.fetchall()]
-
-        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log WHERE 1=1"
-        params = []
-        if tanggal:
-            sql += " AND tanggal=%s"
-            params.append(tanggal)
-        if nama:
-            sql += " AND petugas ILIKE %s"
-            params.append(f"%{nama}%")
-        sql += " ORDER BY tanggal ASC, jam_mulai ASC LIMIT 100"
-        cur.execute(sql, params)
-        data = cur.fetchall()
-        conn.close()
-
-        labels = []
-        data_sisa = []
-        data_pakai = []
-        info_detail = []
-        cards = ""
-        rows = ""
-
-        for r in data:
-            tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = r
-
-            if mulai and selesai:
-                dt_mulai = datetime.combine(tanggal, mulai)
-                dt_selesai = datetime.combine(tanggal, selesai)
-                durasi_detik = (dt_selesai - dt_mulai).total_seconds()
-                if durasi_detik < 0: durasi_detik += 86400
-                h = int(durasi_detik // 3600)
-                m = int((durasi_detik % 3600) // 60)
-                durasi_str = f"{h}j {m}m"
-            else:
-                durasi_str = "-"
-
-            labels.append(f"{tanggal} {mulai.strftime('%H:%M') if mulai else '-'}")
-            data_sisa.append(sisa if sisa else 0)
-            data_pakai.append(pakai if pakai else 0)
-            info_detail.append(f"Tgl:{tanggal} | {mulai.strftime('%H:%M')}-{selesai.strftime('%H:%M') if selesai else '-'} | Durasi:{durasi_str} | Awal:{awal}% | Akhir:{akhir}% | Pakai:{pakai}% | Petugas:{petugas}")
-
-            is_low = sisa and sisa < 30
-            row_style = "background:#ffebee;color:#c62828;font-weight:bold" if is_low else ""
-
-            rows += f"<tr style='{row_style}'><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{durasi_str}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa}%</td><td>{petugas}</td></tr>"
-
-            card_style = "border-left:5px solid #c62828" if is_low else "border-left:5px solid #FF9800"
-            cards += f"""<div class="card" style="{card_style}">
-<div class="card-header">{tanggal} - {petugas}</div>
-<div class="card-body">
-<p><b>Jam:</b> {mulai.strftime('%H:%M') if mulai else '-'} → {selesai.strftime('%H:%M') if selesai else '-'}</p>
-<p><b>Durasi:</b> {durasi_str}</p>
-<p><b>BBM:</b> {awal}% → {akhir}%</p>
-<p><b>Pakai:</b> {pakai}% | <b>Sisa:</b> <span style="color:{'#c62828' if is_low else 'inherit'}">{sisa}%</span></p>
-</div>
-</div>"""
-
-        option_petugas = '<option value="">Semua Petugas</option>'
-        for p in list_petugas:
-            selected = 'selected' if p == nama else ''
-            option_petugas += f'<option value="{p}" {selected}>{p}</option>'
-
-        # INI KUNCINYA: convert ke JSON biar JS ga error
+        # FIX GRAFIK: JSON dumps biar JS ga error
         labels_json = json.dumps(labels)
         data_sisa_json = json.dumps(data_sisa)
         data_pakai_json = json.dumps(data_pakai)
