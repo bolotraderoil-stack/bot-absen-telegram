@@ -94,15 +94,16 @@ def home():
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
 # ===== WEB GENSET: MERAH <30% + GRAFIK + DURASI =====
+# ===== WEB GENSET: MERAH <30% + GRAFIK + DURASI =====
 @app_flask.route('/genset')
 def home_genset():
     try:
-        tanggal = request.args.get('tanggal')
+        tanggal = request.args.get('tanggal', '')
         nama = request.args.get('nama', '')
-        bulan = request.args.get('bulan', datetime.now(WIB).strftime('%Y-%m'))  # default bulan sekarang
+        bulan = request.args.get('bulan', datetime.now(WIB).strftime('%Y-%m'))
         conn = get_db()
         cur = conn.cursor()
-
+        # ... lanjutin kode lu ...
         cur.execute("SELECT DISTINCT petugas FROM genset_log ORDER BY petugas")
         list_petugas = [r[0] for r in cur.fetchall()]
 
