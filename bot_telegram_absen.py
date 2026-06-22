@@ -16,21 +16,21 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 REASON = 1
 GEN_MULAI, GEN_BBM_AWAL, GEN_BBM_AKHIR = range(3)
 
-# ===== WEB ABSEN =====
+def get_db():
+    return psycopg2.connect(os.getenv("SUPABASE_URL"))
+
+# ===== WEB ABSEN: FILTER NAMA + BULAN =====
 @app_flask.route('/')
 def home():
     try:
         nama_filter = request.args.get('nama', '')
-        bulan_filter = request.args.get('bulan', '') # format YYYY-MM
+        bulan_filter = request.args.get('bulan', '')
 
         conn = get_db()
         cur = conn.cursor()
-
-        # Ambil list nama buat dropdown
         cur.execute("SELECT DISTINCT nama FROM absensi ORDER BY nama")
         list_nama = [r[0] for r in cur.fetchall()]
 
-        # Query data
         sql = """
             SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
             EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik,
@@ -38,16 +38,13 @@ def home():
             FROM absensi WHERE 1=1
         """
         params = []
-
         if nama_filter:
             sql += " AND nama ILIKE %s"
             params.append(f"%{nama_filter}%")
-
         if bulan_filter:
             tahun, bulan = bulan_filter.split('-')
             sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
             params.extend([tahun, bulan])
-
         sql += " ORDER BY tanggal DESC, jam_datang DESC LIMIT 200"
         cur.execute(sql, params)
         data = cur.fetchall()
@@ -57,7 +54,6 @@ def home():
         <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
         <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a></nav>"""
 
-        # Buat option dropdown nama
         option_nama = '<option value="">Semua Karyawan</option>'
         for n in list_nama:
             selected = 'selected' if n == nama_filter else ''
@@ -67,11 +63,11 @@ def home():
         <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2{{text-align:center}}
-        table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border-bottom:1px solid #ddd}}
+        table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
         th{{background:#4CAF50;color:white}}tr:hover{{background:#f1f1f1}}
-     .telat{{background:#ffebee;color:#c62828;font-weight:bold}}
-     .status-izin{{color:orange}}.status-sakit{{color:red}}.status-cuti{{color:blue}}.status-lembur{{color:purple;font-weight:bold}}
-     .filter{{text-align:center;margin:20px}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
+       .telat{{background:#ffebee;color:#c62828;font-weight:bold}}
+       .status-izin{{color:orange}}.status-sakit{{color:red}}.status-cuti{{color:blue}}.status-lembur{{color:purple;font-weight:bold}}
+       .filter{{text-align:center;margin:20px}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
         @media (max-width:600px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
         td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
         </style></head><body><h2>📋 Data Absensi</h2>
@@ -92,12 +88,12 @@ def home():
             m = (total_detik % 3600) // 60
             total_jam = f"{h:02d}j {m:02d}m" if total_detik else "-"
             html += f"""<tr class="{row_class}"><td data-label="Nama">{nama}</td><td data-label="Tanggal">{tanggal}</td><td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td><td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td><td data-label="Status" class="{status_class}">{status or 'hadir'}</td><td data-label="Alasan">{alasan or '-'}</td><td data-label="Total Jam">{total_jam}</td></tr>"""
-
         html += """</tbody></table></body></html>"""
         return html
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
-# ===== WEB GENSET + EXPORT CSV =====
+
+# ===== WEB GENSET: MERAH <30% + GRAFIK + DURASI =====
 @app_flask.route('/genset')
 def home_genset():
     try:
@@ -106,11 +102,9 @@ def home_genset():
         conn = get_db()
         cur = conn.cursor()
 
-        # Ambil list petugas buat filter
         cur.execute("SELECT DISTINCT petugas FROM genset_log ORDER BY petugas")
         list_petugas = [r[0] for r in cur.fetchall()]
 
-        # Query data
         sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log WHERE 1=1"
         params = []
         if tanggal:
@@ -119,12 +113,11 @@ def home_genset():
         if nama:
             sql += " AND petugas ILIKE %s"
             params.append(f"%{nama}%")
-        sql += " ORDER BY tanggal ASC, jam_mulai ASC LIMIT 100" # ASC biar grafik urut
+        sql += " ORDER BY tanggal ASC, jam_mulai ASC LIMIT 100"
         cur.execute(sql, params)
         data = cur.fetchall()
         conn.close()
 
-        # Data buat grafik
         labels = []
         data_sisa = []
         data_pakai = []
@@ -132,16 +125,27 @@ def home_genset():
         rows = ""
         for r in data:
             tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = r
-            labels.append(f"{tanggal} {mulai.strftime('%H:%M')}")
-            data_sisa.append(sisa)
-            data_pakai.append(pakai)
-            info_detail.append(f"Tgl:{tanggal} | Mulai:{mulai.strftime('%H:%M')} | Selesai:{selesai.strftime('%H:%M') if selesai else '-'} | Awal:{awal}% | Akhir:{akhir}% | Petugas:{petugas}")
 
-            # Merah kalo < 30%
+            # HITUNG DURASI JAM MENIT
+            if mulai and selesai:
+                dt_mulai = datetime.combine(tanggal, mulai)
+                dt_selesai = datetime.combine(tanggal, selesai)
+                durasi_detik = (dt_selesai - dt_mulai).total_seconds()
+                if durasi_detik < 0: durasi_detik += 86400
+                h = int(durasi_detik // 3600)
+                m = int((durasi_detik % 3600) // 60)
+                durasi_str = f"{h}j {m}m"
+            else:
+                durasi_str = "-"
+
+            labels.append(f"{tanggal} {mulai.strftime('%H:%M') if mulai else '-'}")
+            data_sisa.append(sisa if sisa else 0)
+            data_pakai.append(pakai if pakai else 0)
+            info_detail.append(f"Tgl:{tanggal} | {mulai.strftime('%H:%M')}-{selesai.strftime('%H:%M') if selesai else '-'} | Durasi:{durasi_str} | Awal:{awal}% | Akhir:{akhir}% | Pakai:{pakai}% | Petugas:{petugas}")
+
             row_class = "style='background:#ffebee;color:#c62828;font-weight:bold'" if sisa and sisa < 30 else ""
-            rows += f"<tr {row_class}><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa}%</td><td>{petugas}</td></tr>"
+            rows += f"<tr {row_class}><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{durasi_str}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa}%</td><td>{petugas}</td></tr>"
 
-        # Dropdown petugas
         option_petugas = '<option value="">Semua Petugas</option>'
         for p in list_petugas:
             selected = 'selected' if p == nama else ''
@@ -169,20 +173,14 @@ def home_genset():
         <a href="/export_genset?tanggal={tanggal if tanggal else ''}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV</a>
         </form></div>
 
-        <!-- GRAFIK KEREN -->
-        <div class="chart-container">
-        <canvas id="grafikBBM"></canvas>
-        </div>
-
-        <!-- ALERT KALO ADA YANG < 30% -->
+        <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
         {f'<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>' if any(s and s < 30 for s in data_sisa) else ''}
 
-        <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
+        <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
 
         <script>
         const ctx = document.getElementById('grafikBBM');
         const infoDetail = {info_detail};
-
         new Chart(ctx, {{
             type: 'line',
             data: {{
@@ -192,71 +190,32 @@ def home_genset():
                     data: {data_sisa},
                     borderColor: 'rgb(255, 99, 132)',
                     backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                    tension: 0.4,
-                    fill: true,
-                    pointRadius: 5,
-                    pointHoverRadius: 8
+                    tension: 0.4, fill: true, pointRadius: 5, pointHoverRadius: 8
                 }}, {{
                     label: 'Pemakaian BBM %',
                     data: {data_pakai},
                     borderColor: 'rgb(54, 162, 235)',
                     backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    tension: 0.4,
-                    fill: true,
-                    pointRadius: 5,
-                    pointHoverRadius: 8
+                    tension: 0.4, fill: true, pointRadius: 5, pointHoverRadius: 8
                 }}]
             }},
             options: {{
                 responsive: true,
                 plugins: {{
-                    title: {{
-                        display: true,
-                        text: 'Grafik Penggunaan & Sisa BBM Genset',
-                        font: {{size: 18}}
-                    }},
-                    tooltip: {{
-                        callbacks: {{
-                            afterLabel: function(context) {{
-                                return infoDetail[context.dataIndex];
-                            }}
-                        }}
-                    }},
-                    annotation: {{
-                        annotations: {{
-                            line1: {{
-                                type: 'line',
-                                yMin: 30,
-                                yMax: 30,
-                                borderColor: 'red',
-                                borderWidth: 2,
-                                borderDash: [6, 6],
-                                label: {{
-                                    content: 'Batas Kritis 30%',
-                                    enabled: true,
-                                    position: 'end'
-                                }}
-                            }}
-                        }}
-                    }}
+                    title: {{display: true, text: 'Grafik Penggunaan & Sisa BBM Genset', font: {{size: 18}}}},
+                    tooltip: {{callbacks: {{afterLabel: function(context) {{return infoDetail[context.dataIndex];}}}}}}
                 }},
                 scales: {{
-                    y: {{
-                        beginAtZero: true,
-                        max: 100,
-                        title: {{display: true, text: 'Persentase BBM %'}}
-                    }},
-                    x: {{
-                        title: {{display: true, text: 'Tanggal & Jam'}}
-                    }}
+                    y: {{beginAtZero: true, max: 100, title: {{display: true, text: 'Persentase BBM %'}}}},
+                    x: {{title: {{display: true, text: 'Tanggal & Jam'}}}}
                 }}
             }}
         }});
-        </script>
-        </body></html>"""
+        </script></body></html>"""
         return html
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
+
 @app_flask.route('/export_genset')
 def export_genset():
     try:
@@ -272,17 +231,23 @@ def export_genset():
         if not data: return "Belum ada data genset", 404
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(['Tanggal', 'Jam Mulai', 'Jam Selesai', 'BBM Awal %', 'BBM Akhir %', 'Pemakaian %', 'Sisa %', 'Petugas'])
+        writer.writerow(['Tanggal', 'Jam Mulai', 'Jam Selesai', 'Durasi', 'BBM Awal %', 'BBM Akhir %', 'Pemakaian %', 'Sisa %', 'Petugas'])
         for row in data:
             tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = row
-            writer.writerow([tanggal, mulai.strftime('%H:%M') if mulai else '-', selesai.strftime('%H:%M') if selesai else '-', awal, akhir, pakai, sisa, petugas])
+            if mulai and selesai:
+                dt_mulai = datetime.combine(tanggal, mulai)
+                dt_selesai = datetime.combine(tanggal, selesai)
+                durasi_detik = (dt_selesai - dt_mulai).total_seconds()
+                if durasi_detik < 0: durasi_detik += 86400
+                h = int(durasi_detik // 3600)
+                m = int((durasi_detik % 3600) // 60)
+                durasi_str = f"{h}j {m}m"
+            else: durasi_str = "-"
+            writer.writerow([tanggal, mulai.strftime('%H:%M') if mulai else '-', selesai.strftime('%H:%M') if selesai else '-', durasi_str, awal, akhir, pakai, sisa, petugas])
         output.seek(0)
         return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename=genset_log_{tanggal or 'all'}.csv"})
     except Exception as e:
         return f"Error: {e}", 500
-
-def get_db():
-    return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
 def is_libur(tanggal):
     if tanggal.weekday() == 6: return True, "Minggu"
@@ -363,11 +328,6 @@ def get_rekap_bulanan(user_id, bulan_str=None):
     total_jam_fmt = f"{h:02d}j {m//60:02d}m"
     rata_fmt = f"{(total_detik//hari_hadir//3600):02d}j {((total_detik//hari_hadir)%3600//60):02d}m" if hari_hadir > 0 else "00j 00m"
     return hari_hadir, total_jam_fmt, total_telat, rata_fmt
-
-# ===== GENSET FIX: PAKE EDIT MESSAGE BIAR MENU GA ILANG =====
-async def genset_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
-    return GEN_MULAI
 
 async def genset_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
     jam = update.message.text.strip()
@@ -492,17 +452,6 @@ async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop('status_izin', None)
         await update.message.reply_text(f"✅ Status {status} tersimpan", reply_markup=get_keyboard(cek_absen(user_id)))
         return ConversationHandler.END
-    if update.effective_user.id == ADMIN_ID:
-        try:
-            tanggal = datetime.strptime(teks, '%Y-%m-%d').date()
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute("INSERT INTO libur_nasional (tanggal) VALUES (%s) ON CONFLICT DO NOTHING", (tanggal,))
-            conn.commit()
-            conn.close()
-            await update.message.reply_text(f"✅ {tanggal} ditandai libur", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
-        except: await update.message.reply_text("Format salah. YYYY-MM-DD")
-        return ConversationHandler.END
     return ConversationHandler.END
 
 def run_flask():
@@ -530,23 +479,14 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     genset_conv = ConversationHandler(
-    entry_points=[CallbackQueryHandler(button_handler)],
-    states={
-        GEN_MULAI: [
-            CommandHandler('cancel', cancel),  # TAMBAH INI
-            MessageHandler(filters.TEXT & ~filters.COMMAND, genset_mulai)
-        ],
-        GEN_BBM_AWAL: [
-            CommandHandler('cancel', cancel),  # TAMBAH INI  
-            MessageHandler(filters.TEXT & ~filters.COMMAND, genset_bbm_awal)
-        ],
-        GEN_BBM_AKHIR: [
-            CommandHandler('cancel', cancel),  # TAMBAH INI
-            MessageHandler(filters.TEXT & ~filters.COMMAND, genset_bbm_akhir)
-        ]
-    },
-    fallbacks=[CommandHandler('cancel', cancel)]
-)
+        entry_points=[CallbackQueryHandler(button_handler)],
+        states={
+            GEN_MULAI: [CommandHandler('cancel', cancel), MessageHandler(filters.TEXT & ~filters.COMMAND, genset_mulai)],
+            GEN_BBM_AWAL: [CommandHandler('cancel', cancel), MessageHandler(filters.TEXT & ~filters.COMMAND, genset_bbm_awal)],
+            GEN_BBM_AKHIR: [CommandHandler('cancel', cancel), MessageHandler(filters.TEXT & ~filters.COMMAND, genset_bbm_akhir)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
 
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(button_handler)],
@@ -559,7 +499,7 @@ def main():
     app.add_handler(genset_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot jalan... Absen + Genset + Export CSV")
+    print("Bot jalan... Absen + Genset + Grafik + Durasi")
     app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
