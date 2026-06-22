@@ -166,12 +166,14 @@ def home_genset():
        .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
         </style></head><body><h2>⛽ Log Penggunaan Genset & BBM</h2>
 
-        <div class="filter"><form method="get">
-        <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
-        <select name="nama">{option_petugas}</select>
-        <button>Filter</button><a href="/genset"><button type="button">Reset</button></a>
-        <a href="/export_genset?tanggal={tanggal if tanggal else ''}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV</a>
-        </form></div>
+        <div class="filter">
+<form method="get">
+<input type="date" name="tanggal" value="{{tanggal}}">
+<input type="month" name="bulan" value="{{bulan}}">
+<button type="submit">Filter</button>
+<a href="/export_genset?bulan={{bulan}}"><button type="button">Export CSV Bulan Ini</button></a>
+</form>
+</div>
 
         <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
         {f'<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>' if any(s and s < 30 for s in data_sisa) else ''}
@@ -218,36 +220,43 @@ def home_genset():
 
 @app_flask.route('/export_genset')
 def export_genset():
-    try:
-        tanggal = request.args.get('tanggal')
-        conn = get_db()
-        cur = conn.cursor()
-        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log"
-        if tanggal: sql += f" WHERE tanggal='{tanggal}' ORDER BY jam_mulai"
-        else: sql += " ORDER BY tanggal DESC, jam_mulai DESC"
-        cur.execute(sql)
-        data = cur.fetchall()
-        conn.close()
-        if not data: return "Belum ada data genset", 404
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(['Tanggal', 'Jam Mulai', 'Jam Selesai', 'Durasi', 'BBM Awal %', 'BBM Akhir %', 'Pemakaian %', 'Sisa %', 'Petugas'])
-        for row in data:
-            tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = row
-            if mulai and selesai:
-                dt_mulai = datetime.combine(tanggal, mulai)
-                dt_selesai = datetime.combine(tanggal, selesai)
-                durasi_detik = (dt_selesai - dt_mulai).total_seconds()
-                if durasi_detik < 0: durasi_detik += 86400
-                h = int(durasi_detik // 3600)
-                m = int((durasi_detik % 3600) // 60)
-                durasi_str = f"{h}j {m}m"
-            else: durasi_str = "-"
-            writer.writerow([tanggal, mulai.strftime('%H:%M') if mulai else '-', selesai.strftime('%H:%M') if selesai else '-', durasi_str, awal, akhir, pakai, sisa, petugas])
-        output.seek(0)
-        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename=genset_log_{tanggal or 'all'}.csv"})
-    except Exception as e:
-        return f"Error: {e}", 500
+    tanggal = request.args.get('tanggal', '')  # format: 2025-10-22
+    bulan = request.args.get('bulan', '')      # format: 2025-10
+
+    conn = get_db()
+    cur = conn.cursor()
+    
+    sql = "SELECT * FROM genset WHERE 1=1"
+    params = []
+
+    if bulan:  # prioritasin filter bulan dulu
+        tahun, bln = bulan.split('-')
+        sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
+        params.extend([tahun, bln])
+        filename = f"genset_{bulan}.csv"
+    elif tanggal:  # kalo nggak ada bulan, pake tanggal
+        sql += " AND tanggal = %s"
+        params.append(tanggal)
+        filename = f"genset_{tanggal}.csv"
+    else:  # kalo kosong, ambil semua
+        filename = "genset_all.csv"
+
+    sql += " ORDER BY tanggal DESC, jam_mulai DESC"
+    cur.execute(sql, params)
+    data = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not data:
+        return "Belum ada data buat filter ini", 404
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['ID','Tanggal','Jam Mulai','BBM Awal','BBM Akhir','Pemakaian','User ID','Nama'])
+    writer.writerows(data)
+    output.seek(0)
+    return Response(output, mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment;filename={filename}"})
 
 def is_libur(tanggal):
     if tanggal.weekday() == 6: return True, "Minggu"
