@@ -95,44 +95,37 @@ def home():
 
 # ===== WEB GENSET: MERAH <30% + GRAFIK + DURASI =====
 @app_flask.route('/genset')
-from datetime import datetime
-from zoneinfo import ZoneInfo
-WIB = ZoneInfo("Asia/Jakarta")
+def home_genset():
+    try:
+        tanggal = request.args.get('tanggal')
+        nama = request.args.get('nama', '')
+        conn = get_db()
+        cur = conn.cursor()
 
-@app_flask.route('/genset')
-def genset_web():
-    tanggal = request.args.get('tanggal', '')
-    bulan = request.args.get('bulan', datetime.now(WIB).strftime('%Y-%m')) # default bulan sekarang
+        cur.execute("SELECT DISTINCT petugas FROM genset_log ORDER BY petugas")
+        list_petugas = [r[0] for r in cur.fetchall()]
 
-    conn = get_db()
-    cur = conn.cursor()
+        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log WHERE 1=1"
+        params = []
+        if tanggal:
+            sql += " AND tanggal=%s"
+            params.append(tanggal)
+        if nama:
+            sql += " AND petugas ILIKE %s"
+            params.append(f"%{nama}%")
+        sql += " ORDER BY tanggal ASC, jam_mulai ASC LIMIT 100"
+        cur.execute(sql, params)
+        data = cur.fetchall()
+        conn.close()
 
-    sql = "SELECT * FROM genset WHERE 1=1"
-    params = []
+        labels = []
+        data_sisa = []
+        data_pakai = []
+        info_detail = []
+        rows = ""
+        for r in data:
+            tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = r
 
-    if bulan and '-' in bulan:
-        tahun, bln = bulan.split('-')
-        sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
-        params.extend([tahun, bln])
-    elif tanggal:
-        sql += " AND tanggal = %s"
-        params.append(tanggal)
-    else: # kalo nggak filter apa2, default bulan ini juga
-        tahun, bln = bulan.split('-')
-        sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
-        params.extend([tahun, bln])
-
-    sql += " ORDER BY tanggal DESC, jam_mulai DESC LIMIT 100"
-    cur.execute(sql, params)
-    data = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    labels = [f"{r[1]} {r[2].strftime('%H:%M') if r[2] else ''}" for r in data]
-    sisa = [r[4] for r in data]
-    pakai = [r[5] for r in data]
-
-    return render_template_string(TEMPLATE_GENSET, data=data, labels=labels, sisa=sisa, pakai=pakai, tanggal=tanggal, bulan=bulan)
             # HITUNG DURASI JAM MENIT
             if mulai and selesai:
                 dt_mulai = datetime.combine(tanggal, mulai)
@@ -173,14 +166,11 @@ def genset_web():
        .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
         </style></head><body><h2>⛽ Log Penggunaan Genset & BBM</h2>
 
-        <<div class="filter">
-<form method="get">
-<input type="date" name="tanggal" value="{{tanggal}}">
-<input type="month" name="bulan" value="{{bulan}}">
-<button type="submit">Filter</button>
-<a href="/export_genset?bulan={{bulan}}"><button type="button">Export CSV Bulan Ini</button></a>
-</form>
-</div>
+        <div class="filter"><form method="get">
+        <input type="month" name="bulan" value="{bulan if 'bulan' in locals() else datetime.now(WIB).strftime('%Y-%m')}">
+<select name="nama">{option_petugas}</select>
+<button>Filter</button><a href="/genset"><button type="button">Reset</button></a>
+<a href="/export_genset?bulan={bulan if 'bulan' in locals() else datetime.now(WIB).strftime('%Y-%m')}&nama={nama}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV Bulan Ini</a>        </form></div>
 
         <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
         {f'<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>' if any(s and s < 30 for s in data_sisa) else ''}
@@ -227,43 +217,60 @@ def genset_web():
 
 @app_flask.route('/export_genset')
 def export_genset():
-    tanggal = request.args.get('tanggal', '')  # format: 2025-10-22
-    bulan = request.args.get('bulan', '')      # format: 2025-10
-
-    conn = get_db()
-    cur = conn.cursor()
-    
-    sql = "SELECT * FROM genset WHERE 1=1"
-    params = []
-
-    if bulan:  # prioritasin filter bulan dulu
-        tahun, bln = bulan.split('-')
-        sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
-        params.extend([tahun, bln])
-        filename = f"genset_{bulan}.csv"
-    elif tanggal:  # kalo nggak ada bulan, pake tanggal
-        sql += " AND tanggal = %s"
-        params.append(tanggal)
-        filename = f"genset_{tanggal}.csv"
-    else:  # kalo kosong, ambil semua
-        filename = "genset_all.csv"
-
-    sql += " ORDER BY tanggal DESC, jam_mulai DESC"
-    cur.execute(sql, params)
-    data = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    if not data:
-        return "Belum ada data buat filter ini", 404
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['ID','Tanggal','Jam Mulai','BBM Awal','BBM Akhir','Pemakaian','User ID','Nama'])
-    writer.writerows(data)
-    output.seek(0)
-    return Response(output, mimetype="text/csv",
-                    headers={"Content-Disposition": f"attachment;filename={filename}"})
+    try:
+        tanggal = request.args.get('tanggal')
+nama = request.args.get('nama', '')
+bulan = request.args.get('bulan', datetime.now(WIB).strftime('%Y-%m'))  # tambah ini
+        
+        conn = get_db()
+        cur = conn.cursor()
+        
+        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log WHERE 1=1"
+        params = []
+        
+        # Filter bulan YYYY-MM
+        if bulan and '-' in bulan:
+            tahun, bln = bulan.split('-')
+            sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
+            params.extend([tahun, bln])
+        
+        # Filter nama/petugas
+        if nama:
+            sql += " AND petugas ILIKE %s"
+            params.append(f"%{nama}%")
+            
+        sql += " ORDER BY tanggal DESC, jam_mulai DESC"
+        cur.execute(sql, params)
+        data = cur.fetchall()
+        conn.close()
+        
+        if not data: 
+            return "Belum ada data genset bulan ini", 404
+            
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Tanggal', 'Jam Mulai', 'Jam Selesai', 'Durasi', 'BBM Awal %', 'BBM Akhir %', 'Pemakaian %', 'Sisa %', 'Petugas'])
+        
+        for row in data:
+            tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = row
+            if mulai and selesai:
+                dt_mulai = datetime.combine(tanggal, mulai)
+                dt_selesai = datetime.combine(tanggal, selesai)
+                durasi_detik = (dt_selesai - dt_mulai).total_seconds()
+                if durasi_detik < 0: durasi_detik += 86400
+                h = int(durasi_detik // 3600)
+                m = int((durasi_detik % 3600) // 60)
+                durasi_str = f"{h}j {m}m"
+            else: 
+                durasi_str = "-"
+            writer.writerow([tanggal, mulai.strftime('%H:%M') if mulai else '-', selesai.strftime('%H:%M') if selesai else '-', durasi_str, awal, akhir, pakai, sisa, petugas])
+            
+        output.seek(0)
+        filename = f"genset_log_{bulan}.csv"
+        return Response(output.getvalue(), mimetype="text/csv", 
+                       headers={"Content-Disposition": f"attachment;filename={filename}"})
+    except Exception as e:
+        return f"Error: {e}", 500
 
 def is_libur(tanggal):
     if tanggal.weekday() == 6: return True, "Minggu"
