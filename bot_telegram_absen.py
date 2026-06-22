@@ -19,7 +19,6 @@ GEN_MULAI, GEN_BBM_AWAL, GEN_BBM_AKHIR = range(3)
 def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
-# ===== WEB ABSEN =====
 @app_flask.route('/')
 def home():
     try:
@@ -92,7 +91,6 @@ td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-# ===== WEB GENSET: RESPONSIVE + GRAFIK FIX + DURASI =====
 @app_flask.route('/genset')
 def home_genset():
     try:
@@ -164,7 +162,6 @@ def home_genset():
             selected = 'selected' if p == nama else ''
             option_petugas += f'<option value="{p}" {selected}>{p}</option>'
 
-        # FIX GRAFIK: JSON dumps biar JS ga error
         labels_json = json.dumps(labels)
         data_sisa_json = json.dumps(data_sisa)
         data_pakai_json = json.dumps(data_pakai)
@@ -178,9 +175,7 @@ def home_genset():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-*{{
-box-sizing:border-box
-}}
+*{{box-sizing:border-box}}
 body{{font-family:'Segoe UI',Arial,sans-serif;padding:15px;background:#f5f5f5;margin:0}}
 h2{{text-align:center;color:#333;margin-bottom:10px}}
 .container{{max-width:1200px;margin:0 auto}}
@@ -228,7 +223,7 @@ h2{{font-size:22px}}
 </div>
 <div class="cards-container">{cards}</div>
 <script>
-const ctx = document.getElementById('grafikBBM');
+const ctx = document.getElementById('grafikBBM').getContext('2d');
 const infoDetail = {info_detail_json};
 
 new Chart(ctx, {{
@@ -549,7 +544,7 @@ def main():
     app.add_handler(genset_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot jalan... Absen + Genset + Grafik + Durasi + Responsive")
+    print("Bot jalan... Absen + Genset + Grafik + Durasi + Responsive FIX")
     app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
