@@ -376,10 +376,23 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     genset_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(button_handler)],
-        states={GEN_MULAI: [MessageHandler(filters.TEXT, genset_mulai)], GEN_BBM_AWAL: [MessageHandler(filters.TEXT, genset_bbm_awal)], GEN_BBM_AKHIR: [MessageHandler(filters.TEXT, genset_bbm_akhir)]},
-        fallbacks=[CommandHandler('cancel', cancel)]
-    )
+    entry_points=[CallbackQueryHandler(button_handler)],
+    states={
+        GEN_MULAI: [
+            CommandHandler('cancel', cancel),  # TAMBAH INI
+            MessageHandler(filters.TEXT & ~filters.COMMAND, genset_mulai)
+        ],
+        GEN_BBM_AWAL: [
+            CommandHandler('cancel', cancel),  # TAMBAH INI  
+            MessageHandler(filters.TEXT & ~filters.COMMAND, genset_bbm_awal)
+        ],
+        GEN_BBM_AKHIR: [
+            CommandHandler('cancel', cancel),  # TAMBAH INI
+            MessageHandler(filters.TEXT & ~filters.COMMAND, genset_bbm_akhir)
+        ]
+    },
+    fallbacks=[CommandHandler('cancel', cancel)]
+)
 
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(button_handler)],
