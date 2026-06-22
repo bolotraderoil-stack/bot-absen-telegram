@@ -95,37 +95,44 @@ def home():
 
 # ===== WEB GENSET: MERAH <30% + GRAFIK + DURASI =====
 @app_flask.route('/genset')
-def home_genset():
-    try:
-        tanggal = request.args.get('tanggal')
-        nama = request.args.get('nama', '')
-        conn = get_db()
-        cur = conn.cursor()
+from datetime import datetime
+from zoneinfo import ZoneInfo
+WIB = ZoneInfo("Asia/Jakarta")
 
-        cur.execute("SELECT DISTINCT petugas FROM genset_log ORDER BY petugas")
-        list_petugas = [r[0] for r in cur.fetchall()]
+@app_flask.route('/genset')
+def genset_web():
+    tanggal = request.args.get('tanggal', '')
+    bulan = request.args.get('bulan', datetime.now(WIB).strftime('%Y-%m')) # default bulan sekarang
 
-        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log WHERE 1=1"
-        params = []
-        if tanggal:
-            sql += " AND tanggal=%s"
-            params.append(tanggal)
-        if nama:
-            sql += " AND petugas ILIKE %s"
-            params.append(f"%{nama}%")
-        sql += " ORDER BY tanggal ASC, jam_mulai ASC LIMIT 100"
-        cur.execute(sql, params)
-        data = cur.fetchall()
-        conn.close()
+    conn = get_db()
+    cur = conn.cursor()
 
-        labels = []
-        data_sisa = []
-        data_pakai = []
-        info_detail = []
-        rows = ""
-        for r in data:
-            tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = r
+    sql = "SELECT * FROM genset WHERE 1=1"
+    params = []
 
+    if bulan and '-' in bulan:
+        tahun, bln = bulan.split('-')
+        sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
+        params.extend([tahun, bln])
+    elif tanggal:
+        sql += " AND tanggal = %s"
+        params.append(tanggal)
+    else: # kalo nggak filter apa2, default bulan ini juga
+        tahun, bln = bulan.split('-')
+        sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
+        params.extend([tahun, bln])
+
+    sql += " ORDER BY tanggal DESC, jam_mulai DESC LIMIT 100"
+    cur.execute(sql, params)
+    data = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    labels = [f"{r[1]} {r[2].strftime('%H:%M') if r[2] else ''}" for r in data]
+    sisa = [r[4] for r in data]
+    pakai = [r[5] for r in data]
+
+    return render_template_string(TEMPLATE_GENSET, data=data, labels=labels, sisa=sisa, pakai=pakai, tanggal=tanggal, bulan=bulan)
             # HITUNG DURASI JAM MENIT
             if mulai and selesai:
                 dt_mulai = datetime.combine(tanggal, mulai)
@@ -166,7 +173,7 @@ def home_genset():
        .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
         </style></head><body><h2>⛽ Log Penggunaan Genset & BBM</h2>
 
-        <div class="filter">
+        <<div class="filter">
 <form method="get">
 <input type="date" name="tanggal" value="{{tanggal}}">
 <input type="month" name="bulan" value="{{bulan}}">
