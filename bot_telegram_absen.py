@@ -3,15 +3,15 @@ import threading
 import psycopg2
 import csv
 import io
-import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, request, Response
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, ContextTypes, filters
 
 app_flask = Flask(__name__)
 WIB = ZoneInfo("Asia/Jakarta")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 REASON = 1
 GEN_MULAI, GEN_BBM_AWAL, GEN_BBM_AKHIR = range(3)
@@ -19,6 +19,7 @@ GEN_MULAI, GEN_BBM_AWAL, GEN_BBM_AKHIR = range(3)
 def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
+# ===== WEB ABSEN: FILTER NAMA + BULAN =====
 @app_flask.route('/')
 def home():
     try:
@@ -59,24 +60,25 @@ def home():
             option_nama += f'<option value="{n}" {selected}>{n}</option>'
 
         html = navbar + f"""
-<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2{{text-align:center}}
-table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
-th{{background:#4CAF50;color:white}}tr:hover{{background:#f1f1f1}}
-.telat{{background:#ffebee;color:#c62828;font-weight:bold}}
-.status-izin{{color:orange}}.status-sakit{{color:red}}.status-cuti{{color:blue}}.status-lembur{{color:purple;font-weight:bold}}
-.filter{{text-align:center;margin:20px}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
-@media (max-width:600px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
-td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
-</style></head><body><h2>📋 Data Absensi</h2>
-<div class="filter"><form method="get">
-<select name="nama">{option_nama}</select>
-<input type="month" name="bulan" value="{bulan_filter}">
-<button>Filter</button><a href="/"><button type="button">Reset</button></a>
-</form></div>
-<table><thead><tr><th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th><th>Status</th><th>Alasan</th><th>Total Jam</th></tr></thead><tbody>
-"""
+        <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2{{text-align:center}}
+        table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
+        th{{background:#4CAF50;color:white}}tr:hover{{background:#f1f1f1}}
+       .telat{{background:#ffebee;color:#c62828;font-weight:bold}}
+       .status-izin{{color:orange}}.status-sakit{{color:red}}.status-cuti{{color:blue}}.status-lembur{{color:purple;font-weight:bold}}
+       .filter{{text-align:center;margin:20px}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
+        @media (max-width:600px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
+        td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
+        </style></head><body><h2>📋 Data Absensi</h2>
+        <div class="filter"><form method="get">
+        <select name="nama">{option_nama}</select>
+        <input type="month" name="bulan" value="{bulan_filter}">
+        <button>Filter</button><a href="/"><button type="button">Reset</button></a>
+        </form></div>
+        <table><thead><tr><th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th><th>Status</th><th>Alasan</th><th>Total Jam</th></tr></thead><tbody>
+        """
+
         for row in data:
             nama, tanggal, datang, pulang, status, alasan, telat_db, total_detik, telat_flag = row
             row_class = "telat" if telat_flag else ""
@@ -91,6 +93,7 @@ td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
+# ===== WEB GENSET: MERAH <30% + GRAFIK + DURASI =====
 @app_flask.route('/genset')
 def home_genset():
     try:
@@ -119,12 +122,11 @@ def home_genset():
         data_sisa = []
         data_pakai = []
         info_detail = []
-        cards = ""
         rows = ""
-
         for r in data:
             tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = r
 
+            # HITUNG DURASI JAM MENIT
             if mulai and selesai:
                 dt_mulai = datetime.combine(tanggal, mulai)
                 dt_selesai = datetime.combine(tanggal, selesai)
@@ -139,127 +141,80 @@ def home_genset():
             labels.append(f"{tanggal} {mulai.strftime('%H:%M') if mulai else '-'}")
             data_sisa.append(sisa if sisa else 0)
             data_pakai.append(pakai if pakai else 0)
-            info_detail.append(f"Tgl:{tanggal} | {mulai.strftime('%H:%M')}-{selesai.strftime('%H:%M') if selesai else '-'} | Durasi:{durasi_str} | Awal:{awal}% | Akhir:{akhir}% | Petugas:{petugas}")
+            info_detail.append(f"Tgl:{tanggal} | {mulai.strftime('%H:%M')}-{selesai.strftime('%H:%M') if selesai else '-'} | Durasi:{durasi_str} | Awal:{awal}% | Akhir:{akhir}% | Pakai:{pakai}% | Petugas:{petugas}")
 
-            is_low = sisa and sisa < 30
-            row_style = "background:#ffebee;color:#c62828;font-weight:bold" if is_low else ""
-
-            rows += f"<tr style='{row_style}'><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{durasi_str}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa}%</td><td>{petugas}</td></tr>"
-
-            card_style = "border-left:5px solid #c62828" if is_low else "border-left:5px solid #FF9800"
-            cards += f"""<div class="card" style="{card_style}">
-<div class="card-header">{tanggal} - {petugas}</div>
-<div class="card-body">
-<p><b>Jam:</b> {mulai.strftime('%H:%M') if mulai else '-'} → {selesai.strftime('%H:%M') if selesai else '-'}</p>
-<p><b>Durasi:</b> {durasi_str}</p>
-<p><b>BBM:</b> {awal}% → {akhir}%</p>
-<p><b>Pakai:</b> {pakai}% | <b>Sisa:</b> <span style="color:{'#c62828' if is_low else 'inherit'}">{sisa}%</span></p>
-</div>
-</div>"""
+            row_class = "style='background:#ffebee;color:#c62828;font-weight:bold'" if sisa and sisa < 30 else ""
+            rows += f"<tr {row_class}><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{durasi_str}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa}%</td><td>{petugas}</td></tr>"
 
         option_petugas = '<option value="">Semua Petugas</option>'
         for p in list_petugas:
             selected = 'selected' if p == nama else ''
             option_petugas += f'<option value="{p}" {selected}>{p}</option>'
 
-        labels_json = json.dumps(labels)
-        data_sisa_json = json.dumps(data_sisa)
-        data_pakai_json = json.dumps(data_pakai)
-        info_detail_json = json.dumps(info_detail)
-
         navbar = """<nav style="background:#FF9800;padding:15px;text-align:center">
         <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
         <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a></nav>"""
 
         html = navbar + f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Log Genset</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
-*{{box-sizing:border-box}}
-body{{font-family:'Segoe UI',Arial,sans-serif;padding:15px;background:#f5f5f5;margin:0}}
-h2{{text-align:center;color:#333;margin-bottom:10px}}
-.container{{max-width:1200px;margin:0 auto}}
-.filter{{text-align:center;margin:20px 0;display:flex;flex-wrap:wrap;gap:10px;justify-content:center}}
-input,select,button{{padding:10px 12px;font-size:16px;border-radius:8px;border:1px solid #ddd;flex:1 1 150px;max-width:200px}}
-button{{background:#FF9800;color:white;border:none;cursor:pointer;font-weight:bold}}
-button:hover{{background:#e68900}}
-.chart-container{{background:white;padding:20px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin:20px 0;height:400px}}
-.alert-low{{background:#ffebee;color:#c62828;padding:12px;border-radius:8px;text-align:center;font-weight:bold;margin:15px 0;border:1px solid #ef9a9a}}
-.table-wrapper{{overflow-x:auto}}
-table{{width:100%;border-collapse:collapse;background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1)}}
-th,td{{padding:14px;text-align:center;border-bottom:1px solid #eee}}
-th{{background:#FF9800;color:white;font-weight:600;position:sticky;top:0}}
-tr:hover{{background:#fff3e0}}
-.cards-container{{display:none;gap:12px}}
-.card{{background:white;border-radius:12px;padding:15px;box-shadow:0 2px 6px rgba(0,0,0,0.1)}}
-.card-header{{font-weight:bold;font-size:18px;margin-bottom:10px;color:#333}}
-.card-body p{{margin:8px 0;font-size:15px}}
-@media (max-width:768px){{
-body{{padding:10px}}
-h2{{font-size:22px}}
-.filter input,.filter select,.filter button{{max-width:100%;flex:1 1 100%}}
-.chart-container{{padding:12px;height:300px}}
-.table-wrapper{{display:none}}
-.cards-container{{display:grid;grid-template-columns:1fr}}
-@media (min-width:769px){{
-.cards-container{{display:none}}
-.table-wrapper{{display:block}}
-</style></head><body>
-<div class="container">
-<h2>⛽ Log Genset & BBM</h2>
-<div class="filter">
-<form method="get" style="display:contents">
-<input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
-<select name="nama">{option_petugas}</select>
-<button>Filter</button>
-<a href="/genset" style="text-decoration:none"><button type="button">Reset</button></a>
-<a href="/export_genset?tanggal={tanggal if tanggal else ''}" style="padding:10px 12px;background:#4CAF50;color:white;text-decoration:none;border-radius:8px;font-weight:bold">⬇️ CSV</a>
-</form>
-</div>
-<div class="chart-container"><canvas id="grafikBBM"></canvas></div>
-{f'<div class="alert-low">⚠️ Sisa BBM < 30% terdeteksi. Segera isi!</div>' if any(s and s < 30 for s in data_sisa) else ''}
-<div class="table-wrapper">
-<table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>Awal</th><th>Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
-</div>
-<div class="cards-container">{cards}</div>
-<script>
-const ctx = document.getElementById('grafikBBM').getContext('2d');
-const infoDetail = {info_detail_json};
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <style>body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2{{text-align:center}}
+        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
+        th{{background:#FF9800;color:white}}tr:hover{{background:#fff3e0}}
+       .filter{{text-align:center;margin:20px}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
+       .chart-container{{background:white;padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.1);margin:20px 0}}
+       .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
+        </style></head><body><h2>⛽ Log Penggunaan Genset & BBM</h2>
 
-new Chart(ctx, {{
-type: 'line',
-data: {{
-labels: {labels_json},
-datasets: [{{
-label: 'Sisa BBM %',
-data: {data_sisa_json},
-borderColor: '#f44336',
-backgroundColor: 'rgba(244, 67, 54, 0.15)',
-tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 7
-}}, {{
-label: 'Pemakaian %',
-data: {data_pakai_json},
-borderColor: '#2196F3',
-backgroundColor: 'rgba(33, 150, 243, 0.15)',
-tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 7
-}}]
-}},
-options: {{
-responsive: true,
-maintainAspectRatio: false,
-plugins: {{
-title: {{display: true, text: 'Grafik BBM Genset', font: {{size: 16}}}},
-tooltip: {{callbacks: {{afterLabel: function(context) {{return infoDetail[context.dataIndex];}}}}}}
-}},
-scales: {{
-y: {{beginAtZero: true, max: 100, title: {{display: true, text: 'Persentase %'}}}},
-x: {{title: {{display: true, text: 'Waktu'}}}}
-}});
-</script>
-</div></body></html>"""
+        <div class="filter"><form method="get">
+        <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
+        <select name="nama">{option_petugas}</select>
+        <button>Filter</button><a href="/genset"><button type="button">Reset</button></a>
+        <a href="/export_genset?tanggal={tanggal if tanggal else ''}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV</a>
+        </form></div>
+
+        <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
+        {f'<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>' if any(s and s < 30 for s in data_sisa) else ''}
+
+        <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
+
+        <script>
+        const ctx = document.getElementById('grafikBBM');
+        const infoDetail = {info_detail};
+        new Chart(ctx, {{
+            type: 'line',
+            data: {{
+                labels: {labels},
+                datasets: [{{
+                    label: 'Sisa BBM %',
+                    data: {data_sisa},
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    tension: 0.4, fill: true, pointRadius: 5, pointHoverRadius: 8
+                }}, {{
+                    label: 'Pemakaian BBM %',
+                    data: {data_pakai},
+                    borderColor: 'rgb(54, 162, 235)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    tension: 0.4, fill: true, pointRadius: 5, pointHoverRadius: 8
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                plugins: {{
+                    title: {{display: true, text: 'Grafik Penggunaan & Sisa BBM Genset', font: {{size: 18}}}},
+                    tooltip: {{callbacks: {{afterLabel: function(context) {{return infoDetail[context.dataIndex];}}}}}}
+                }},
+                scales: {{
+                    y: {{beginAtZero: true, max: 100, title: {{display: true, text: 'Persentase BBM %'}}}},
+                    x: {{title: {{display: true, text: 'Tanggal & Jam'}}}}
+                }}
+            }}
+        }});
+        </script></body></html>"""
         return html
     except Exception as e:
-        return f"<h2>Error</h2><pre>{e}</pre>", 500
+        return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
 @app_flask.route('/export_genset')
 def export_genset():
@@ -544,7 +499,7 @@ def main():
     app.add_handler(genset_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot jalan... Absen + Genset + Grafik + Durasi + Responsive FIX")
+    print("Bot jalan... Absen + Genset + Grafik + Durasi")
     app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
