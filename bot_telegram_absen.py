@@ -5,7 +5,7 @@ import csv
 import io
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from flask import Flask, request
+from flask import Flask, request, Response
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, ContextTypes, filters
 
@@ -14,7 +14,7 @@ WIB = ZoneInfo("Asia/Jakarta")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 REASON = 1
-GEN_MULAI, GEN_BBM_AWAL, GEN_BBM_AKHIR = range(3) # State genset
+GEN_MULAI, GEN_BBM_AWAL, GEN_BBM_AKHIR = range(3)
 
 # ===== WEB ABSEN =====
 @app_flask.route('/')
@@ -23,22 +23,10 @@ def home():
         tanggal = request.args.get('tanggal')
         conn = get_db()
         cur = conn.cursor()
-
-        if tanggal:
-            cur.execute("""
-                SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
-                EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik,
-                CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag
-                FROM absensi WHERE tanggal=%s ORDER BY jam_datang DESC
-            """, (tanggal,))
-        else:
-            cur.execute("""
-                SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
-                EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik,
-                CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag
-                FROM absensi ORDER BY tanggal DESC, jam_datang DESC LIMIT 100
-            """)
-
+        sql = "SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat, EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik, CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag FROM absensi"
+        if tanggal: sql += f" WHERE tanggal='{tanggal}'"
+        sql += " ORDER BY tanggal DESC, jam_datang DESC LIMIT 100"
+        cur.execute(sql)
         data = cur.fetchall()
         conn.close()
 
@@ -50,17 +38,16 @@ def home():
         <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2{{text-align:center}}
-        table{{width:100%;border-collapse:collapse;background:white;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}
-        th,td{{padding:12px;text-align:left;border-bottom:1px solid #ddd}}
+        table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border-bottom:1px solid #ddd}}
         th{{background:#4CAF50;color:white}}tr:hover{{background:#f1f1f1}}
       .telat{{background:#ffebee;color:#c62828;font-weight:bold}}
       .status-izin{{color:orange}}.status-sakit{{color:red}}.status-cuti{{color:blue}}.status-lembur{{color:purple;font-weight:bold}}
-      .filter{{text-align:center;margin-bottom:20px}}input,button{{padding:8px;font-size:16px}}
+      .filter{{text-align:center;margin:20px}}input,button{{padding:8px;font-size:16px}}
         @media (max-width:600px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
         td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
         </style></head><body><h2>📋 Data Absensi</h2>
         <div class="filter"><form method="get"><input type="date" name="tanggal" value="{tgl}">
-        <button type="submit">Filter</button><a href="/"><button type="button">Reset</button></a></form></div>
+        <button>Filter</button><a href="/"><button type="button">Reset</button></a></form></div>
         <table><thead><tr><th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th><th>Status</th><th>Alasan</th><th>Total Jam</th></tr></thead><tbody>
         """.format(tgl=tanggal if tanggal else "")
 
@@ -72,35 +59,23 @@ def home():
             h = total_detik // 3600
             m = (total_detik % 3600) // 60
             total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
-
-            html += f"""<tr class="{row_class}">
-                <td data-label="Nama">{nama}</td>
-                <td data-label="Tanggal">{tanggal}</td>
-                <td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td>
-                <td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td>
-                <td data-label="Status" class="{status_class}">{status or 'hadir'}</td>
-                <td data-label="Alasan">{alasan or '-'}</td>
-                <td data-label="Total Jam">{total_jam}</td></tr>"""
-
+            html += f"""<tr class="{row_class}"><td data-label="Nama">{nama}</td><td data-label="Tanggal">{tanggal}</td><td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td><td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td><td data-label="Status" class="{status_class}">{status or 'hadir'}</td><td data-label="Alasan">{alasan or '-'}</td><td data-label="Total Jam">{total_jam}</td></tr>"""
         html += """</tbody></table></body></html>"""
         return html
-
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-# ===== WEB GENSET =====
+# ===== WEB GENSET + EXPORT CSV =====
 @app_flask.route('/genset')
 def home_genset():
     try:
         tanggal = request.args.get('tanggal')
         conn = get_db()
         cur = conn.cursor()
-
-        if tanggal:
-            cur.execute("SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log WHERE tanggal=%s ORDER BY jam_mulai DESC", (tanggal,))
-        else:
-            cur.execute("SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log ORDER BY tanggal DESC, jam_mulai DESC LIMIT 100")
-
+        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log"
+        if tanggal: sql += f" WHERE tanggal='{tanggal}'"
+        sql += " ORDER BY tanggal DESC, jam_mulai DESC LIMIT 100"
+        cur.execute(sql)
         data = cur.fetchall()
         conn.close()
 
@@ -118,28 +93,51 @@ def home_genset():
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2{{text-align:center}}
         table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border-bottom:1px solid #ddd}}
-        th{{background:#FF9800;color:white}}tr:hover{{background:#fff3e0}}.filter{{text-align:center;margin:20px}}</style></head>
-        <body><h2>⛽ Log Penggunaan Genset & BBM</h2><div class="filter"><form method="get">
-        <input type="date" name="tanggal" value="{tanggal if tanggal else ''}"><button>Filter</button><a href="/genset"><button type="button">Reset</button></a></form></div>
+        th{{background:#FF9800;color:white}}tr:hover{{background:#fff3e0}}.filter{{text-align:center;margin:20px}}
+       .btn-export{{padding:10px 20px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px}}</style></head>
+        <body><h2>⛽ Log Penggunaan Genset & BBM</h2><div class="filter"><form method="get" style="display:inline-block">
+        <input type="date" name="tanggal" value="{tanggal if tanggal else ''}"><button>Filter</button><a href="/genset"><button type="button">Reset</button></a></form>
+        <a href="/export_genset?tanggal={tanggal if tanggal else ''}" class="btn-export">⬇️ Export CSV</a></div>
         <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table></body></html>"""
         return html
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
+@app_flask.route('/export_genset')
+def export_genset():
+    try:
+        tanggal = request.args.get('tanggal')
+        conn = get_db()
+        cur = conn.cursor()
+        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log"
+        if tanggal: sql += f" WHERE tanggal='{tanggal}' ORDER BY jam_mulai"
+        else: sql += " ORDER BY tanggal DESC, jam_mulai DESC"
+        cur.execute(sql)
+        data = cur.fetchall()
+        conn.close()
+        if not data: return "Belum ada data genset", 404
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Tanggal', 'Jam Mulai', 'Jam Selesai', 'BBM Awal %', 'BBM Akhir %', 'Pemakaian %', 'Sisa %', 'Petugas'])
+        for row in data:
+            tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = row
+            writer.writerow([tanggal, mulai.strftime('%H:%M') if mulai else '-', selesai.strftime('%H:%M') if selesai else '-', awal, akhir, pakai, sisa, petugas])
+        output.seek(0)
+        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename=genset_log_{tanggal or 'all'}.csv"})
+    except Exception as e:
+        return f"Error: {e}", 500
+
 def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
 def is_libur(tanggal):
-    if tanggal.weekday() == 6:
-        return True, "Minggu"
+    if tanggal.weekday() == 6: return True, "Minggu"
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM libur_nasional WHERE tanggal=%s", (tanggal,))
     result = cur.fetchone()
     conn.close()
-    if result:
-        return True, "Libur Nasional"
-    return False, None
+    return (True, "Libur Nasional") if result else (False, None)
 
 def get_keyboard(status):
     buttons = []
@@ -158,15 +156,9 @@ def cek_absen(user_id):
     cur.execute("SELECT jam_datang, jam_pulang, status FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, hari_ini))
     data = cur.fetchone()
     conn.close()
-    if not data:
-        return 'belum'
-    if data[2] in ['izin', 'sakit', 'cuti', 'lembur']:
-        return data[2]
-    if data[0] and not data[1]:
-        return 'datang'
-    if data[0] and data[1]:
-        return 'selesai'
-    return 'belum'
+    if not data: return 'belum'
+    if data[2] in ['izin', 'sakit', 'cuti', 'lembur']: return data[2]
+    return 'datang' if data[0] and not data[1] else 'selesai' if data[0] and data[1] else 'belum'
 
 def simpan_datang(user_id, nama):
     conn = get_db()
@@ -181,11 +173,8 @@ def simpan_datang(user_id, nama):
         cur.execute("INSERT INTO absensi (user_id, nama, tanggal, jam_datang, status, telat, alasan) VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (user_id, tanggal) DO NOTHING", (user_id, nama, hari_ini, jam_sekarang, status, telat, jenis_libur))
         conn.commit()
         return True, telat, libur, jenis_libur
-    except Exception as e:
-        print("Error simpan_datang:", e)
-        return False, False, False, None
-    finally:
-        conn.close()
+    except: return False, False, False, None
+    finally: conn.close()
 
 def simpan_pulang(user_id):
     conn = get_db()
@@ -211,42 +200,19 @@ def get_rekap_bulanan(user_id, bulan_str=None):
     conn = get_db()
     cur = conn.cursor()
     now = datetime.now(WIB)
-    if bulan_str:
-        tahun, bulan = map(int, bulan_str.split('-'))
-    else:
-        tahun, bulan = now.year, now.month
-    cur.execute("SELECT COUNT(*) as hari_hadir, COALESCE(EXTRACT(EPOCH FROM SUM(jam_pulang - jam_datang)), 0) as total_detik, SUM(CASE WHEN telat THEN 1 ELSE 0 END) as total_telat FROM absensi WHERE user_id=%s AND EXTRACT(MONTH FROM tanggal)=%s AND EXTRACT(YEAR FROM tanggal)=%s AND jam_pulang IS NOT NULL AND status IN ('hadir','lembur')", (user_id, bulan, tahun))
+    tahun, bulan = map(int, bulan_str.split('-')) if bulan_str else (now.year, now.month)
+    cur.execute("SELECT COUNT(*), COALESCE(EXTRACT(EPOCH FROM SUM(jam_pulang - jam_datang)), 0), SUM(CASE WHEN telat THEN 1 ELSE 0 END) FROM absensi WHERE user_id=%s AND EXTRACT(MONTH FROM tanggal)=%s AND EXTRACT(YEAR FROM tanggal)=%s AND jam_pulang IS NOT NULL AND status IN ('hadir','lembur')", (user_id, bulan, tahun))
     data = cur.fetchone()
     conn.close()
-    hari_hadir = data[0] if data[0] else 0
-    total_detik = int(data[1]) if data[1] else 0
-    total_telat = data[2] if data[2] else 0
-    h = total_detik // 3600
-    m = (total_detik % 3600) // 60
-    total_jam_fmt = f"{h:02d}j {m:02d}m"
-    if hari_hadir > 0:
-        rata_detik = total_detik // hari_hadir
-        rh = rata_detik // 3600
-        rm = (rata_detik % 3600) // 60
-        rata_fmt = f"{rh:02d}j {rm:02d}m"
-    else:
-        rata_fmt = "00j 00m"
+    hari_hadir, total_detik, total_telat = data[0] or 0, int(data[1] or 0), data[2] or 0
+    h, m = divmod(total_detik, 3600)
+    total_jam_fmt = f"{h:02d}j {m//60:02d}m"
+    rata_fmt = f"{(total_detik//hari_hadir//3600):02d}j {((total_detik//hari_hadir)%3600//60):02d}m" if hari_hadir > 0 else "00j 00m"
     return hari_hadir, total_jam_fmt, total_telat, rata_fmt
 
-def get_data_saya(user_id):
-    conn = get_db()
-    cur = conn.cursor()
-    hari_ini = datetime.now(WIB).date()
-    tujuh_hari_lalu = hari_ini - timedelta(days=7)
-    cur.execute("SELECT tanggal, jam_datang, jam_pulang, status, alasan, EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik FROM absensi WHERE user_id=%s AND tanggal >= %s ORDER BY tanggal DESC", (user_id, tujuh_hari_lalu))
-    data = cur.fetchall()
-    conn.close()
-    return data
-
-# ===== GENSET CONVERSATION =====
+# ===== GENSET FIX: PAKE EDIT MESSAGE BIAR MENU GA ILANG =====
 async def genset_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("⛽ *Catat Penggunaan Genset*\n\n1/3 Jam mulai? Ketik 08:30", parse_mode='Markdown')
     return GEN_MULAI
 
 async def genset_mulai(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -265,7 +231,7 @@ async def genset_bbm_awal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bbm = int(update.message.text.strip())
         if not 0 <= bbm <= 100: raise ValueError
         context.user_data['bbm_awal'] = bbm
-        await update.message.reply_text("3/3 BBM akhir %? Contoh: 60")
+        await update.message.reply_text("3/3 BBM akhir %? Contoh: 60\nKetik /cancel buat batal")
         return GEN_BBM_AKHIR
     except:
         await update.message.reply_text("Isi angka 0-100 aja bang")
@@ -289,67 +255,26 @@ async def genset_bbm_akhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur.execute("INSERT INTO genset_log (tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas, user_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", (tanggal, context.user_data['jam_mulai'], jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, nama, user_id))
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"✅ *Genset Dicatat*\n📅 {tanggal}\n⏰ {context.user_data['jam_mulai']} - {jam_selesai}\n⛽ BBM Awal: {bbm_awal}%\n⛽ BBM Akhir: {bbm_akhir}%\n🔥 Pemakaian: {pemakaian}%\n💧 Sisa: {sisa}%\n👤 Petugas: {nama}", parse_mode='Markdown')
+        await update.message.reply_text(f"✅ *Genset Dicatat*\n📅 {tanggal}\n⏰ {context.user_data['jam_mulai']} - {jam_selesai}\n⛽ {bbm_awal}% → {bbm_akhir}%\n🔥 Pakai: {pemakaian}%\n💧 Sisa: {sisa}%\n👤 {nama}\n\nKetik /start buat balik ke menu", parse_mode='Markdown')
         context.user_data.clear()
         return ConversationHandler.END
     except:
         await update.message.reply_text("Isi angka 0-100")
         return GEN_BBM_AKHIR
 
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text("Dibatalkan. Ketik /start buat buka menu", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
+    return ConversationHandler.END
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     status = cek_absen(user_id)
     hari_ini = datetime.now(WIB).strftime('%d/%m/%Y')
     keyboard = get_keyboard(status)
-    teks = f"🤖 *Absen*\n📅 {hari_ini}\n\n"
-    if status == 'belum':
-        teks += "Waktunya absen datang"
-    elif status in ['datang', 'lembur']:
-        teks += "✅ Sudah absen datang\nSilakan absen pulang"
-    elif status in ['izin', 'sakit', 'cuti']:
-        teks += f"📝 Status hari ini: {status}"
-    else:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT jam_datang, jam_pulang FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, datetime.now(WIB).date()))
-        data = cur.fetchone()
-        conn.close()
-        teks += f"✅ Datang: {data[0].strftime('%H:%M:%S')}\n"
-        teks += f"🚪 Pulang: {data[1].strftime('%H:%M:%S')}\n\n"
-        teks += "Absensi hari ini sudah selesai"
+    teks = f"🤖 *Absen & Genset*\n📅 {hari_ini}\n\n"
+    teks += "Waktunya absen datang" if status == 'belum' else "✅ Sudah absen datang\nSilakan absen pulang" if status in ['datang', 'lembur'] else f"📝 Status hari ini: {status}" if status in ['izin', 'sakit', 'cuti'] else "Absensi hari ini sudah selesai"
     await update.message.reply_text(teks, reply_markup=keyboard, parse_mode='Markdown')
-
-async def rekap_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    bulan_str = context.args[0] if context.args else None
-    try:
-        hari_hadir, total_jam, total_telat, rata_rata = get_rekap_bulanan(user_id, bulan_str)
-        bulan_nama = datetime.strptime(bulan_str, '%Y-%m').strftime('%B %Y') if bulan_str else datetime.now(WIB).strftime('%B %Y')
-    except:
-        await update.message.reply_text("Format salah. Contoh: `/export 2025-10`", parse_mode='Markdown')
-        return
-    teks = f"📊 *Rekap {bulan_nama}*\n\n📅 Hari Hadir: {hari_hadir} hari\n⏱️ Total Jam Kerja: {total_jam}\n⚠️ Telat: {total_telat} kali\nRata-rata: {rata_rata}/hari"
-    await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
-
-async def saya_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    data = get_data_saya(user_id)
-    if not data:
-        await update.message.reply_text("Belum ada data absen 7 hari terakhir.", reply_markup=get_keyboard(cek_absen(user_id)))
-        return
-    teks = "*📋 Absen 7 Hari Terakhir*\n\n"
-    for row in data:
-        tanggal, datang, pulang, status, alasan, total_detik = row
-        total_detik = int(total_detik) if total_detik else 0
-        h = total_detik // 3600
-        m = (total_detik % 3600) // 60
-        total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
-        status_text = status or 'hadir'
-        teks += f"*{tanggal}*\nDatang: {datang.strftime('%H:%M') if datang else '-'}\nPulang: {pulang.strftime('%H:%M') if pulang else '-'}\nStatus: {status_text}\n"
-        if alasan: teks += f"Alasan: {alasan}\n"
-        if total_jam!= "-": teks += f"Total: {total_jam}\n"
-        teks += "\n"
-    await update.message.reply_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(cek_absen(user_id)))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -360,12 +285,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = cek_absen(user_id)
     wib = datetime.now(WIB)
     jam = wib.strftime('%H:%M:%S')
-    hari_ini = wib.strftime('%d/%m/%Y')
 
     if button_id == 'datang':
-        if status!= 'belum':
-            await query.answer("Kamu sudah absen datang", show_alert=True)
-            return
+        if status!= 'belum': await query.answer("Sudah absen datang", show_alert=True); return
         success, telat, libur, jenis_libur = simpan_datang(user_id, nama)
         if success:
             teks = f"✅ Absen datang berhasil!\nWaktu: {jam}"
@@ -374,29 +296,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             teks += "\n\nSilakan absen pulang"
             await query.edit_message_text(text=teks, reply_markup=get_keyboard('datang'), parse_mode='Markdown')
     elif button_id == 'pulang':
-        if status not in ['datang', 'lembur']:
-            await query.answer("Kamu belum absen datang", show_alert=True)
-            return
+        if status not in ['datang', 'lembur']: await query.answer("Belum absen datang", show_alert=True); return
         if simpan_pulang(user_id):
             conn = get_db()
             cur = conn.cursor()
             cur.execute("SELECT jam_datang, jam_pulang, status, EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik FROM absensi WHERE user_id=%s AND tanggal=%s", (user_id, wib.date()))
             data = cur.fetchone()
             conn.close()
-            jam_datang_str = data[0].strftime('%H:%M:%S')
-            jam_pulang_str = data[1].strftime('%H:%M:%S')
-            status_akhir = data[2]
+            jam_datang_str, jam_pulang_str, status_akhir = data[0].strftime('%H:%M:%S'), data[1].strftime('%H:%M:%S'), data[2]
             total_detik = int(data[3]) if data[3] else 0
-            h = total_detik // 3600
-            m = (total_detik % 3600) // 60
-            total_jam = f"{h:02d}j {m:02d}m"
-            teks = f"🤖 *Absen Selesai*\n📅 {hari_ini}\n━━━━━━━━━━━━━━\n✅ Datang: {jam_datang_str}\n🚪 Pulang: {jam_pulang_str}\n⏱️ Total Jam Kerja: {total_jam}\n"
+            h, m = divmod(total_detik, 3600)
+            total_jam = f"{h:02d}j {m//60:02d}m"
+            teks = f"🤖 *Absen Selesai*\n📅 {wib.strftime('%d/%m/%Y')}\n━━━━━━━━━━━━━━\n✅ Datang: {jam_datang_str}\n🚪 Pulang: {jam_pulang_str}\n⏱️ Total: {total_jam}\n"
             if status_akhir == 'lembur': teks += f"💜 Status: LEMBUR\n"
-            teks += f"Absen hari ini sudah selesai terimakasih\n**Tetap semangat**"
+            teks += f"Selesai. Ketik /start buat buka menu"
             await query.edit_message_text(text=teks, parse_mode='Markdown', reply_markup=get_keyboard('selesai'))
     elif button_id == 'genset':
-        await query.delete_message()
-        return await genset_start(update, context)
+        await query.answer()
+        await query.edit_message_text("⛽ *Catat Penggunaan Genset*\n\n1/3 Jam mulai? Ketik 08:30\nKetik /cancel buat batal", parse_mode='Markdown')
+        context.user_data.clear()
+        return GEN_MULAI
     elif button_id in ['izin', 'sakit', 'cuti']:
         context.user_data['status_izin'] = button_id
         await query.edit_message_text(f"Kirim alasan {button_id}:", reply_markup=get_keyboard(status))
@@ -404,11 +323,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif button_id == 'rekap':
         hari_hadir, total_jam, total_telat, rata_rata = get_rekap_bulanan(user_id)
         bulan_nama = datetime.now(WIB).strftime('%B %Y')
-        teks = f"📊 *Rekap {bulan_nama}*\n\n📅 Hari Hadir: {hari_hadir} hari\n⏱️ Total Jam Kerja: {total_jam}\n⚠️ Telat: {total_telat} kali\nRata-rata: {rata_rata}/hari"
+        teks = f"📊 *Rekap {bulan_nama}*\n\n📅 Hari Hadir: {hari_hadir} hari\n⏱️ Total Jam: {total_jam}\n⚠️ Telat: {total_telat} kali\nRata-rata: {rata_rata}/hari"
         await query.edit_message_text(teks, parse_mode='Markdown', reply_markup=get_keyboard(status))
     elif button_id == 'noop':
-        await query.answer()
-        await query.edit_message_text("Menu ditutup. Ketik /start untuk buka lagi.", reply_markup=None)
+        await query.edit_message_text("Menu ditutup. Ketik /start", reply_markup=None)
 
 async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     teks = update.message.text.strip()
@@ -418,7 +336,7 @@ async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         nama = update.effective_user.first_name
         simpan_izin(user_id, nama, status, teks)
         context.user_data.pop('status_izin', None)
-        await update.message.reply_text(f"✅ Status {status} berhasil disimpan.\nAlasan: {teks}", reply_markup=get_keyboard(cek_absen(user_id)))
+        await update.message.reply_text(f"✅ Status {status} tersimpan", reply_markup=get_keyboard(cek_absen(user_id)))
         return ConversationHandler.END
     if update.effective_user.id == ADMIN_ID:
         try:
@@ -428,9 +346,8 @@ async def terima_alasan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cur.execute("INSERT INTO libur_nasional (tanggal) VALUES (%s) ON CONFLICT DO NOTHING", (tanggal,))
             conn.commit()
             conn.close()
-            await update.message.reply_text(f"✅ Tanggal {tanggal} ditandai sebagai libur nasional", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
-        except ValueError:
-            await update.message.reply_text("Format salah. Gunakan YYYY-MM-DD\nContoh: 2025-12-25", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
+            await update.message.reply_text(f"✅ {tanggal} ditandai libur", reply_markup=get_keyboard(cek_absen(update.effective_user.id)))
+        except: await update.message.reply_text("Format salah. YYYY-MM-DD")
         return ConversationHandler.END
     return ConversationHandler.END
 
@@ -442,7 +359,7 @@ def main():
     TOKEN = os.getenv("TOKEN")
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     if not TOKEN or not SUPABASE_URL:
-        print("Error: TOKEN dan SUPABASE_URL harus diset")
+        print("Error: TOKEN/SUPABASE_URL kosong")
         return
 
     conn = get_db()
@@ -459,9 +376,9 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     genset_conv = ConversationHandler(
-        entry_points=[CommandHandler('genset', genset_start)],
+        entry_points=[CallbackQueryHandler(button_handler)],
         states={GEN_MULAI: [MessageHandler(filters.TEXT, genset_mulai)], GEN_BBM_AWAL: [MessageHandler(filters.TEXT, genset_bbm_awal)], GEN_BBM_AKHIR: [MessageHandler(filters.TEXT, genset_bbm_akhir)]},
-        fallbacks=[CommandHandler('cancel', lambda u,c: ConversationHandler.END)]
+        fallbacks=[CommandHandler('cancel', cancel)]
     )
 
     conv_handler = ConversationHandler(
@@ -471,13 +388,11 @@ def main():
     )
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("rekap", rekap_command))
-    app.add_handler(CommandHandler("saya", saya_command))
     app.add_handler(conv_handler)
     app.add_handler(genset_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot jalan... Absen + Genset BBM")
+    print("Bot jalan... Absen + Genset + Export CSV")
     app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
