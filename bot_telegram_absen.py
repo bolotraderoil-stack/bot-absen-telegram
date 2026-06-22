@@ -20,13 +20,36 @@ GEN_MULAI, GEN_BBM_AWAL, GEN_BBM_AKHIR = range(3)
 @app_flask.route('/')
 def home():
     try:
-        tanggal = request.args.get('tanggal')
+        nama_filter = request.args.get('nama', '')
+        bulan_filter = request.args.get('bulan', '') # format YYYY-MM
+
         conn = get_db()
         cur = conn.cursor()
-        sql = "SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat, EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik, CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag FROM absensi"
-        if tanggal: sql += f" WHERE tanggal='{tanggal}'"
-        sql += " ORDER BY tanggal DESC, jam_datang DESC LIMIT 100"
-        cur.execute(sql)
+
+        # Ambil list nama buat dropdown
+        cur.execute("SELECT DISTINCT nama FROM absensi ORDER BY nama")
+        list_nama = [r[0] for r in cur.fetchall()]
+
+        # Query data
+        sql = """
+            SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
+            EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik,
+            CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag
+            FROM absensi WHERE 1=1
+        """
+        params = []
+
+        if nama_filter:
+            sql += " AND nama ILIKE %s"
+            params.append(f"%{nama_filter}%")
+
+        if bulan_filter:
+            tahun, bulan = bulan_filter.split('-')
+            sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
+            params.extend([tahun, bulan])
+
+        sql += " ORDER BY tanggal DESC, jam_datang DESC LIMIT 200"
+        cur.execute(sql, params)
         data = cur.fetchall()
         conn.close()
 
@@ -34,22 +57,31 @@ def home():
         <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
         <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a></nav>"""
 
-        html = navbar + """
+        # Buat option dropdown nama
+        option_nama = '<option value="">Semua Karyawan</option>'
+        for n in list_nama:
+            selected = 'selected' if n == nama_filter else ''
+            option_nama += f'<option value="{n}" {selected}>{n}</option>'
+
+        html = navbar + f"""
         <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2{{text-align:center}}
         table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border-bottom:1px solid #ddd}}
         th{{background:#4CAF50;color:white}}tr:hover{{background:#f1f1f1}}
-      .telat{{background:#ffebee;color:#c62828;font-weight:bold}}
-      .status-izin{{color:orange}}.status-sakit{{color:red}}.status-cuti{{color:blue}}.status-lembur{{color:purple;font-weight:bold}}
-      .filter{{text-align:center;margin:20px}}input,button{{padding:8px;font-size:16px}}
+     .telat{{background:#ffebee;color:#c62828;font-weight:bold}}
+     .status-izin{{color:orange}}.status-sakit{{color:red}}.status-cuti{{color:blue}}.status-lembur{{color:purple;font-weight:bold}}
+     .filter{{text-align:center;margin:20px}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
         @media (max-width:600px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
         td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
         </style></head><body><h2>📋 Data Absensi</h2>
-        <div class="filter"><form method="get"><input type="date" name="tanggal" value="{tgl}">
-        <button>Filter</button><a href="/"><button type="button">Reset</button></a></form></div>
+        <div class="filter"><form method="get">
+        <select name="nama">{option_nama}</select>
+        <input type="month" name="bulan" value="{bulan_filter}">
+        <button>Filter</button><a href="/"><button type="button">Reset</button></a>
+        </form></div>
         <table><thead><tr><th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th><th>Status</th><th>Alasan</th><th>Total Jam</th></tr></thead><tbody>
-        """.format(tgl=tanggal if tanggal else "")
+        """
 
         for row in data:
             nama, tanggal, datang, pulang, status, alasan, telat_db, total_detik, telat_flag = row
@@ -58,13 +90,13 @@ def home():
             total_detik = int(total_detik) if total_detik else 0
             h = total_detik // 3600
             m = (total_detik % 3600) // 60
-            total_jam = f"{h:02d}j {m:02d}m" if total_detik > 0 else "-"
+            total_jam = f"{h:02d}j {m:02d}m" if total_detik else "-"
             html += f"""<tr class="{row_class}"><td data-label="Nama">{nama}</td><td data-label="Tanggal">{tanggal}</td><td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td><td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td><td data-label="Status" class="{status_class}">{status or 'hadir'}</td><td data-label="Alasan">{alasan or '-'}</td><td data-label="Total Jam">{total_jam}</td></tr>"""
+
         html += """</tbody></table></body></html>"""
         return html
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
-
 # ===== WEB GENSET + EXPORT CSV =====
 @app_flask.route('/genset')
 def home_genset():
