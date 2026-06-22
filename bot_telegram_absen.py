@@ -99,6 +99,7 @@ def home_genset():
     try:
         tanggal = request.args.get('tanggal')
         nama = request.args.get('nama', '')
+        bulan = request.args.get('bulan', datetime.now(WIB).strftime('%Y-%m'))  # default bulan sekarang
         conn = get_db()
         cur = conn.cursor()
 
