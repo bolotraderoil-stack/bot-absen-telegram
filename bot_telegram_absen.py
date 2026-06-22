@@ -94,16 +94,14 @@ def home():
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
 # ===== WEB GENSET: MERAH <30% + GRAFIK + DURASI =====
-# ===== WEB GENSET: MERAH <30% + GRAFIK + DURASI =====
 @app_flask.route('/genset')
 def home_genset():
     try:
-        tanggal = request.args.get('tanggal', '')
+        tanggal = request.args.get('tanggal')
         nama = request.args.get('nama', '')
-        bulan = request.args.get('bulan', datetime.now(WIB).strftime('%Y-%m'))
         conn = get_db()
         cur = conn.cursor()
-        # ... lanjutin kode lu ...
+
         cur.execute("SELECT DISTINCT petugas FROM genset_log ORDER BY petugas")
         list_petugas = [r[0] for r in cur.fetchall()]
 
@@ -169,10 +167,11 @@ def home_genset():
         </style></head><body><h2>⛽ Log Penggunaan Genset & BBM</h2>
 
         <div class="filter"><form method="get">
-        <input type="month" name="bulan" value="{bulan if 'bulan' in locals() else datetime.now(WIB).strftime('%Y-%m')}">
-<select name="nama">{option_petugas}</select>
-<button>Filter</button><a href="/genset"><button type="button">Reset</button></a>
-<a href="/export_genset?bulan={bulan if 'bulan' in locals() else datetime.now(WIB).strftime('%Y-%m')}&nama={nama}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV Bulan Ini</a>        </form></div>
+        <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
+        <select name="nama">{option_petugas}</select>
+        <button>Filter</button><a href="/genset"><button type="button">Reset</button></a>
+        <a href="/export_genset?tanggal={tanggal if tanggal else ''}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV</a>
+        </form></div>
 
         <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
         {f'<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>' if any(s and s < 30 for s in data_sisa) else ''}
@@ -221,38 +220,18 @@ def home_genset():
 def export_genset():
     try:
         tanggal = request.args.get('tanggal')
-nama = request.args.get('nama', '')
-bulan = request.args.get('bulan', datetime.now(WIB).strftime('%Y-%m'))  # tambah ini
-        
         conn = get_db()
         cur = conn.cursor()
-        
-        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log WHERE 1=1"
-        params = []
-        
-        # Filter bulan YYYY-MM
-        if bulan and '-' in bulan:
-            tahun, bln = bulan.split('-')
-            sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
-            params.extend([tahun, bln])
-        
-        # Filter nama/petugas
-        if nama:
-            sql += " AND petugas ILIKE %s"
-            params.append(f"%{nama}%")
-            
-        sql += " ORDER BY tanggal DESC, jam_mulai DESC"
-        cur.execute(sql, params)
+        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log"
+        if tanggal: sql += f" WHERE tanggal='{tanggal}' ORDER BY jam_mulai"
+        else: sql += " ORDER BY tanggal DESC, jam_mulai DESC"
+        cur.execute(sql)
         data = cur.fetchall()
         conn.close()
-        
-        if not data: 
-            return "Belum ada data genset bulan ini", 404
-            
+        if not data: return "Belum ada data genset", 404
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(['Tanggal', 'Jam Mulai', 'Jam Selesai', 'Durasi', 'BBM Awal %', 'BBM Akhir %', 'Pemakaian %', 'Sisa %', 'Petugas'])
-        
         for row in data:
             tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = row
             if mulai and selesai:
@@ -263,14 +242,10 @@ bulan = request.args.get('bulan', datetime.now(WIB).strftime('%Y-%m'))  # tambah
                 h = int(durasi_detik // 3600)
                 m = int((durasi_detik % 3600) // 60)
                 durasi_str = f"{h}j {m}m"
-            else: 
-                durasi_str = "-"
+            else: durasi_str = "-"
             writer.writerow([tanggal, mulai.strftime('%H:%M') if mulai else '-', selesai.strftime('%H:%M') if selesai else '-', durasi_str, awal, akhir, pakai, sisa, petugas])
-            
         output.seek(0)
-        filename = f"genset_log_{bulan}.csv"
-        return Response(output.getvalue(), mimetype="text/csv", 
-                       headers={"Content-Disposition": f"attachment;filename={filename}"})
+        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename=genset_log_{tanggal or 'all'}.csv"})
     except Exception as e:
         return f"Error: {e}", 500
 
