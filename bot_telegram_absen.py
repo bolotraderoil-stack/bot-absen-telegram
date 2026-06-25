@@ -51,8 +51,9 @@ def home():
         conn.close()
 
         navbar = """<nav style="background:#4CAF50;padding:15px;text-align:center">
-        
-        <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a></nav>"""
+        <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
+        <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
+        <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
 
         option_nama = '<option value="">Semua Karyawan</option>'
         for n in list_nama:
@@ -126,7 +127,6 @@ def home_genset():
         for r in data:
             tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = r
 
-            # HITUNG DURASI JAM MENIT
             if mulai and selesai:
                 dt_mulai = datetime.combine(tanggal, mulai)
                 dt_selesai = datetime.combine(tanggal, selesai)
@@ -152,8 +152,9 @@ def home_genset():
             option_petugas += f'<option value="{p}" {selected}>{p}</option>'
 
         navbar = """<nav style="background:#FF9800;padding:15px;text-align:center">
-        
-        <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a></nav>"""
+        <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
+        <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
+        <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
 
         html = navbar + f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Log Genset</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -174,7 +175,7 @@ def home_genset():
         </form></div>
 
         <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
-        {f'<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>' if any(s and s < 30 for s in data_sisa) else ''}
+        {{f'<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>' if any(s and s < 30 for s in data_sisa) else ''}}
 
         <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
 
@@ -216,6 +217,136 @@ def home_genset():
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
+# ===== WEB TAB: CEK MAINTENANCE RUTIN GENSET =====
+@app_flask.route('/maintenance', methods=['GET', 'POST'])
+def maintenance_routine():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        if request.method == 'POST':
+            tanggal = request.form.get('tanggal') or datetime.now(WIB).strftime('%Y-%m-%d')
+            jam_penggunaan = request.form.get('jam_penggunaan', '')
+            voltase_1p_v1 = request.form.get('voltase_1p_v1', '')
+            voltase_1p_v2 = request.form.get('voltase_1p_v2', '')
+            voltase_1p_v3 = request.form.get('voltase_1p_v3', '')
+            voltase_3p_v1v2 = request.form.get('voltase_3p_v1v2', '')
+            voltase_3p_v2v3 = request.form.get('voltase_3p_v2v3', '')
+            voltase_3p_v3v1 = request.form.get('voltase_3p_v3v1', '')
+            voltase_accu = request.form.get('voltase_accu', '')
+            bbm_persen = request.form.get('bbm_persen', '')
+            air_radiator = request.form.get('air_radiator', '')
+            oli_mesin = request.form.get('oli_mesin', '')
+            petugas = request.form.get('petugas', '')
+            
+            cur.execute("""
+                INSERT INTO genset_maintenance 
+                (tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu, bbm_persen, air_radiator, oli_mesin, petugas)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu, bbm_persen, air_radiator, oli_mesin, petugas))
+            conn.commit()
+        
+        cur.execute("""
+            SELECT tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, 
+                   voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu, 
+                   bbm_persen, air_radiator, oli_mesin, petugas 
+            FROM genset_maintenance ORDER BY tanggal DESC, id DESC LIMIT 100
+        """)
+        data = cur.fetchall()
+        conn.close()
+        
+        navbar = """<nav style="background:#009688;padding:15px;text-align:center">
+        <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
+        <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
+        <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
+        
+        rows = ""
+        for r in data:
+            tgl, jp, v1, v2, v3, v1v2, v2v3, v3v1, vaccu, bbm, rad, oli, ptg = r
+            rows += f"<tr><td>{tgl}</td><td>{jp}</td><td>{v1}</td><td>{v2}</td><td>{v3}</td><td>{v1v2}</td><td>{v2v3}</td><td>{v3v1}</td><td>{vaccu}</td><td>{bbm}%</td><td>{rad}</td><td>{oli}</td><td>{ptg}</td></tr>"
+            
+        hari_ini = datetime.now(WIB).strftime('%Y-%m-%d')
+        
+        html = navbar + f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Maintenance Rutin Genset</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+        body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2,h3{{text-align:center}}h4{{margin:10px 0 5px 0;color:#009688;border-bottom:1px solid #ddd;padding-bottom:5px}}
+        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center;font-size:14px}}
+        th{{background:#009688;color:white}}tr:hover{{background:#e0f2f1}}
+        .form-container{{background:white;padding:20px;border-radius:10px;max-width:550px;margin:0 auto;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}
+        .form-group{{margin-bottom:15px}}label{{display:block;margin-bottom:5px;font-weight:bold;font-size:14px}}
+        .grid-3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:15px}}
+        input,select,button{{width:100%;padding:10px;font-size:16px;border-radius:5px;border:1px solid #ddd;box-sizing:border-box}}
+        button{{background:#009688;color:white;border:none;cursor:pointer;font-weight:bold;margin-top:10px}}
+        button:hover{{background:#00796b}}
+        @media (max-width:768px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
+        td{{border:none;position:relative;padding-left:50%;text-align:left}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
+        </style></head><body>
+        <h2>🔧 Cek Maintenance Rutin Genset</h2>
+        
+        <div class="form-container">
+            <h3>📝 Input Log Maintenance</h3>
+            <form method="post">
+                <div class="form-group"><label>Tanggal</label><input type="date" name="tanggal" value="{hari_ini}" required></div>
+                <div class="form-group"><label>Jam Penggunaan (Hour Meter)</label><input type="text" name="jam_penggunaan" placeholder="Contoh: 1250 Jam" required></div>
+                
+                <h4>Voltase 1 Phase (L - N)</h4>
+                <div class="grid-3">
+                    <div><label>V1 (R-N)</label><input type="text" name="voltase_1p_v1" placeholder="220V" required></div>
+                    <div><label>V2 (S-N)</label><input type="text" name="voltase_1p_v2" placeholder="220V" required></div>
+                    <div><label>V3 (T-N)</label><input type="text" name="voltase_1p_v3" placeholder="220V" required></div>
+                </div>
+
+                <h4>Voltase 3 Phase (L - L)</h4>
+                <div class="grid-3">
+                    <div><label>V1 - V2</label><input type="text" name="voltase_3p_v1v2" placeholder="380V" required></div>
+                    <div><label>V2 - V3</label><input type="text" name="voltase_3p_v2v3" placeholder="380V" required></div>
+                    <div><label>V3 - V1</label><input type="text" name="voltase_3p_v3v1" placeholder="380V" required></div>
+                </div>
+
+                <div class="form-group"><label>Voltase Accu</label><input type="text" name="voltase_accu" placeholder="Contoh: 12.6V" required></div>
+                <div class="form-group"><label>% BBM</label><input type="number" name="bbm_persen" placeholder="Contoh: 85" min="0" max="100" required></div>
+                <div class="form-group"><label>Air Radiator</label>
+                    <select name="air_radiator">
+                        <option value="Bagus/Penuh">Bagus / Penuh</option>
+                        <option value="Kurang/Isi">Kurang / Perlu Tambah</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Oli Mesin</label>
+                    <select name="oli_mesin">
+                        <option value="Bagus/Cukup">Bagus / Cukup</option>
+                        <option value="Kurang/Tambah">Kurang / Perlu Tambah</option>
+                        <option value="Kotor/Wajib Ganti">Kotor / Wajib Ganti</option>
+                    </select>
+                </div>
+                <div class="form-group"><label>Nama Petugas</label><input type="text" name="petugas" placeholder="Nama Anda" required></div>
+                <button type="submit">Simpan Log Maintenance</button>
+            </form>
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Tanggal</th><th>Jam Kerja</th><th>1P-V1</th><th>1P-V2</th><th>1P-V3</th><th>3P-V1V2</th><th>3P-V2V3</th><th>3P-V3V1</th><th>V. Accu</th><th>% BBM</th><th>Radiator</th><th>Oli</th><th>Petugas</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows}
+            </tbody>
+        </table>
+        <script>
+            const headers = ["Tanggal", "Jam Kerja", "1P-V1", "1P-V2", "1P-V3", "3P-V1V2", "3P-V2V3", "3P-V3V1", "V. Accu", "% BBM", "Radiator", "Oli", "Petugas"];
+            document.querySelectorAll("tbody tr").forEach(tr => {{
+                tr.querySelectorAll("td").forEach((td, i) => {{
+                    td.setAttribute("data-label", headers[i]);
+                }});
+            }});
+        </script>
+        </body></html>"""
+        return html
+    except Exception as e:
+        return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
+
 @app_flask.route('/export_genset')
 def export_genset():
     try:
@@ -223,7 +354,8 @@ def export_genset():
         conn = get_db()
         cur = conn.cursor()
         sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log"
-        
+        if tanggal: sql += f" WHERE tanggal='{tanggal}' ORDER BY jam_mulai"
+        else: sql += " ORDER BY tanggal DESC, jam_mulai DESC"
         cur.execute(sql)
         data = cur.fetchall()
         conn.close()
@@ -368,7 +500,7 @@ async def genset_bbm_akhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur.execute("INSERT INTO genset_log (tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas, user_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", (tanggal, context.user_data['jam_mulai'], jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, nama, user_id))
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"✅ *Genset Dicatat*\n📅 {tanggal}\n⏰ {context.user_data['jam_mulai']} - {jam_selesai}\n⛽ {bbm_awal}% → {bbm_akhir}%\n🔥 Pakai: {pemakaian}%\n💧 Sisa: {sisa}%\n👤 {nama}\n\nKetik /start buat balik ke menu", parse_mode='Markdown')
+        await update.message.reply_text(f"✅ *Genset Dicatar*\n📅 {tanggal}\n⏰ {context.user_data['jam_mulai']} - {jam_selesai}\n⛽ {bbm_awal}% → {bbm_akhir}%\n🔥 Pakai: {pemakaian}%\n💧 Sisa: {sisa}%\n👤 {nama}\n\nKetik /start buat balik ke menu", parse_mode='Markdown')
         context.user_data.clear()
         return ConversationHandler.END
     except:
@@ -469,6 +601,27 @@ def main():
     cur.execute("CREATE TABLE IF NOT EXISTS absensi (id SERIAL PRIMARY KEY, user_id BIGINT NOT NULL, nama TEXT, tanggal DATE NOT NULL, jam_datang TIME, jam_pulang TIME, status TEXT DEFAULT 'hadir', alasan TEXT, telat BOOLEAN DEFAULT false, UNIQUE(user_id, tanggal))")
     cur.execute("CREATE TABLE IF NOT EXISTS libur_nasional (tanggal DATE PRIMARY KEY)")
     cur.execute("CREATE TABLE IF NOT EXISTS genset_log (id SERIAL PRIMARY KEY, tanggal DATE NOT NULL, jam_mulai TIME NOT NULL, jam_selesai TIME, bbm_awal INTEGER NOT NULL, bbm_akhir INTEGER, pemakaian INTEGER, sisa INTEGER, petugas TEXT, user_id BIGINT)")
+    
+    # Inisialisasi Tabel Maintenance Genset Dengan Pembagian 3 Kolom Voltase
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS genset_maintenance (
+            id SERIAL PRIMARY KEY, 
+            tanggal DATE NOT NULL, 
+            jam_penggunaan TEXT, 
+            voltase_1p_v1 TEXT, 
+            voltase_1p_v2 TEXT, 
+            voltase_1p_v3 TEXT, 
+            voltase_3p_v1v2 TEXT, 
+            voltase_3p_v2v3 TEXT, 
+            voltase_3p_v3v1 TEXT, 
+            voltase_accu TEXT, 
+            bbm_persen TEXT, 
+            air_radiator TEXT, 
+            oli_mesin TEXT, 
+            petugas TEXT
+        )
+    """)
+    
     conn.commit()
     conn.close()
     print("Database siap")
