@@ -223,8 +223,7 @@ def export_genset():
         conn = get_db()
         cur = conn.cursor()
         sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log"
-        if tanggal: sql += f" WHERE tanggal='{tanggal}' ORDER BY jam_mulai"
-        else: sql += " ORDER BY tanggal DESC, jam_mulai DESC"
+        
         cur.execute(sql)
         data = cur.fetchall()
         conn.close()
