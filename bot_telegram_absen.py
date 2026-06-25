@@ -20,7 +20,7 @@ def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
 
 # ===== WEB ABSEN: FILTER NAMA + BULAN =====
-@app_flask.route('/')
+@app_flask.route('/absen')
 def home():
     try:
         nama_filter = request.args.get('nama', '')
@@ -95,7 +95,7 @@ def home():
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
 # ===== WEB GENSET: PERAHUAN BANNER TETAP AMAN =====
-@app_flask.route('/genset')
+@app_flask.route('/')
 def home_genset():
     try:
         tanggal = request.args.get('tanggal')
