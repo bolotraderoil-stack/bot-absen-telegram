@@ -5,7 +5,7 @@ import csv
 import io
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from flask import Flask, request, Response
+from flask import Flask, request, Response, send_file
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler, ContextTypes, filters
 
@@ -18,6 +18,17 @@ GEN_MULAI, GEN_BBM_AWAL, GEN_BBM_AKHIR = range(3)
 
 def get_db():
     return psycopg2.connect(os.getenv("SUPABASE_URL"))
+
+# ===== ROUTE UNTUK MENAMPILKAN LOGO / FAVICON =====
+@app_flask.route('/logo.png')
+def get_logo():
+    # Mencari file logo.png atau nama default kiriman Anda di folder yang sama
+    if os.path.exists('logo.png'):
+        return send_file('logo.png', mimetype='image/png')
+    elif os.path.exists('1000430229.png'):
+        return send_file('1000430229.png', mimetype='image/png')
+    else:
+        return "Logo tidak ditemukan. Pastikan file gambar ada di folder script.", 404
 
 # ===== WEB ABSEN: FILTER NAMA + BULAN =====
 @app_flask.route('/absen')
@@ -50,7 +61,7 @@ def home():
         data = cur.fetchall()
         conn.close()
 
-        navbar = """<nav style="background:#4CAF50;padding:15px;text-align:center">
+        navbar = """<nav style="background:#4CAF50;padding:15px;text-align:center;position:relative;z-index:10">
         <a href="/absen" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
         <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
         <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
@@ -63,12 +74,14 @@ def home():
         html = navbar + f"""
         <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2{{text-align:center}}
-        table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
+        <link rel="icon" type="image/png" href="/logo.png">
+        <style>body{{font-family:Arial;padding:20px;background:#f5f5f5;position:relative;min-height:100vh}}h2{{text-align:center}}
+        body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.06;z-index:-1;pointer-events:none;}}
+        table{{width:100%;border-collapse:collapse;background:white;position:relative;z-index:1}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
         th{{background:#4CAF50;color:white}}tr:hover{{background:#f1f1f1}}
        .telat{{background:#ffebee;color:#c62828;font-weight:bold}}
        .status-izin{{color:orange}}.status-sakit{{color:red}}.status-cuti{{color:blue}}.status-lembur{{color:purple;font-weight:bold}}
-       .filter{{text-align:center;margin:20px}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
+       .filter{{text-align:center;margin:20px;position:relative;z-index:1}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
         @media (max-width:600px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
         td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
         </style></head><body><h2>📋 Data Absensi</h2>
@@ -94,7 +107,7 @@ def home():
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-# ===== WEB GENSET: PERAHUAN BANNER TETAP AMAN =====
+# ===== WEB GENSET =====
 @app_flask.route('/')
 def home_genset():
     try:
@@ -146,7 +159,6 @@ def home_genset():
             row_class = "style='background:#ffebee;color:#c62828;font-weight:bold'" if sisa and sisa < 30 else ""
             rows += f"<tr {row_class}><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{durasi_str}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa}%</td><td>{petugas}</td></tr>"
 
-        # LOGIKA BANNER DIKORIDORKAN DI LUAR F-STRING BIAR TIDAK BUG
         alert_html = ""
         if any(s and s < 30 for s in data_sisa):
             alert_html = '<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>'
@@ -156,19 +168,21 @@ def home_genset():
             selected = 'selected' if p == nama else ''
             option_petugas += f'<option value="{p}" {selected}>{p}</option>'
 
-        navbar = """<nav style="background:#FF9800;padding:15px;text-align:center">
+        navbar = """<nav style="background:#FF9800;padding:15px;text-align:center;position:relative;z-index:10">
         
         <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
         <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
 
         html = navbar + f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Log Genset</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="icon" type="image/png" href="/logo.png">
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <style>body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2{{text-align:center}}
-        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
+        <style>body{{font-family:Arial;padding:20px;background:#f5f5f5;position:relative;min-height:100vh}}h2{{text-align:center}}
+        body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.06;z-index:-1;pointer-events:none;}}
+        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
         th{{background:#FF9800;color:white}}tr:hover{{background:#fff3e0}}
-       .filter{{text-align:center;margin:20px}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
-       .chart-container{{background:white;padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.1);margin:20px 0}}
+       .filter{{text-align:center;margin:20px;position:relative;z-index:1}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
+       .chart-container{{background:white;padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.1);margin:20px 0;position:relative;z-index:1}}
        .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
         </style></head><body><h2>⛽ Log Penggunaan Genset & BBM</h2>
 
@@ -222,7 +236,7 @@ def home_genset():
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-# ===== WEB TAB: CEK MAINTENANCE RUTIN GENSET (PENCATATAN 2 ACCU) =====
+# ===== WEB TAB: CEK MAINTENANCE RUTIN GENSET =====
 @app_flask.route('/maintenance', methods=['GET', 'POST'])
 def maintenance_routine():
     try:
@@ -261,7 +275,7 @@ def maintenance_routine():
         data = cur.fetchall()
         conn.close()
         
-        navbar = """<nav style="background:#009688;padding:15px;text-align:center">
+        navbar = """<nav style="background:#009688;padding:15px;text-align:center;position:relative;z-index:10">
         
         <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
         <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
@@ -275,11 +289,13 @@ def maintenance_routine():
         
         html = navbar + f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Maintenance Rutin Genset</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="icon" type="image/png" href="/logo.png">
         <style>
-        body{{font-family:Arial;padding:20px;background:#f5f5f5}}h2,h3{{text-align:center}}h4{{margin:10px 0 5px 0;color:#009688;border-bottom:1px solid #ddd;padding-bottom:5px}}
-        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center;font-size:14px}}
+        body{{font-family:Arial;padding:20px;background:#f5f5f5;position:relative;min-height:100vh}}h2,h3{{text-align:center}}h4{{margin:10px 0 5px 0;color:#009688;border-bottom:1px solid #ddd;padding-bottom:5px}}
+        body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.06;z-index:-1;pointer-events:none;}}
+        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center;font-size:14px}}
         th{{background:#009688;color:white}}tr:hover{{background:#e0f2f1}}
-        .form-container{{background:white;padding:20px;border-radius:10px;max-width:550px;margin:0 auto;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}
+        .form-container{{background:white;padding:20px;border-radius:10px;max-width:550px;margin:0 auto;box-shadow:0 2px 5px rgba(0,0,0,0.1);position:relative;z-index:1}}
         .form-group{{margin-bottom:15px}}label{{display:block;margin-bottom:5px;font-weight:bold;font-size:14px}}
         .grid-3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:15px}}
         .grid-2{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px}}
@@ -614,7 +630,6 @@ def main():
     cur.execute("CREATE TABLE IF NOT EXISTS libur_nasional (tanggal DATE PRIMARY KEY)")
     cur.execute("CREATE TABLE IF NOT EXISTS genset_log (id SERIAL PRIMARY KEY, tanggal DATE NOT NULL, jam_mulai TIME NOT NULL, jam_selesai TIME, bbm_awal INTEGER NOT NULL, bbm_akhir INTEGER, pemakaian INTEGER, sisa INTEGER, petugas TEXT, user_id BIGINT)")
     
-    # Inisialisasi otomatis tabel baru maintenance di database (Disisipkan voltase_accu_mati & voltase_accu_hidup)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS genset_maintenance (
             id SERIAL PRIMARY KEY, 
@@ -663,7 +678,7 @@ def main():
     app.add_handler(genset_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot jalan... Absen + Genset + Grafik + Maintenance 3Phase (Dual Accu Mode)")
+    print("Bot jalan... Absen + Genset + Grafik + Maintenance (Dual Accu & Branding Mode)")
     app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
