@@ -51,7 +51,7 @@ def home():
         conn.close()
 
         navbar = """<nav style="background:#4CAF50;padding:15px;text-align:center">
-      #  <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
+        
         <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a></nav>"""
 
         option_nama = '<option value="">Semua Karyawan</option>'
