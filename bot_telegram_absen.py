@@ -222,7 +222,7 @@ def home_genset():
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-# ===== WEB TAB: CEK MAINTENANCE RUTIN GENSET (3 PHASE UPDATE) =====
+# ===== WEB TAB: CEK MAINTENANCE RUTIN GENSET (PENCATATAN 2 ACCU) =====
 @app_flask.route('/maintenance', methods=['GET', 'POST'])
 def maintenance_routine():
     try:
@@ -238,7 +238,8 @@ def maintenance_routine():
             voltase_3p_v1v2 = request.form.get('voltase_3p_v1v2', '')
             voltase_3p_v2v3 = request.form.get('voltase_3p_v2v3', '')
             voltase_3p_v3v1 = request.form.get('voltase_3p_v3v1', '')
-            voltase_accu = request.form.get('voltase_accu', '')
+            voltase_accu_mati = request.form.get('voltase_accu_mati', '')
+            voltase_accu_hidup = request.form.get('voltase_accu_hidup', '')
             bbm_persen = request.form.get('bbm_persen', '')
             air_radiator = request.form.get('air_radiator', '')
             oli_mesin = request.form.get('oli_mesin', '')
@@ -246,14 +247,14 @@ def maintenance_routine():
             
             cur.execute("""
                 INSERT INTO genset_maintenance 
-                (tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu, bbm_persen, air_radiator, oli_mesin, petugas)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu, bbm_persen, air_radiator, oli_mesin, petugas))
+                (tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu_mati, voltase_accu_hidup, bbm_persen, air_radiator, oli_mesin, petugas)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu_mati, voltase_accu_hidup, bbm_persen, air_radiator, oli_mesin, petugas))
             conn.commit()
         
         cur.execute("""
             SELECT tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, 
-                   voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu, 
+                   voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu_mati, voltase_accu_hidup, 
                    bbm_persen, air_radiator, oli_mesin, petugas 
             FROM genset_maintenance ORDER BY tanggal DESC, id DESC LIMIT 100
         """)
@@ -267,8 +268,8 @@ def maintenance_routine():
         
         rows = ""
         for r in data:
-            tgl, jp, v1, v2, v3, v1v2, v2v3, v3v1, vaccu, bbm, rad, oli, ptg = r
-            rows += f"<tr><td>{tgl}</td><td>{jp}</td><td>{v1}</td><td>{v2}</td><td>{v3}</td><td>{v1v2}</td><td>{v2v3}</td><td>{v3v1}</td><td>{vaccu}</td><td>{bbm}%</td><td>{rad}</td><td>{oli}</td><td>{ptg}</td></tr>"
+            tgl, jp, v1, v2, v3, v1v2, v2v3, v3v1, vaccu_mati, vaccu_hidup, bbm, rad, oli, ptg = r
+            rows += f"<tr><td>{tgl}</td><td>{jp}</td><td>{v1}</td><td>{v2}</td><td>{v3}</td><td>{v1v2}</td><td>{v2v3}</td><td>{v3v1}</td><td>{vaccu_mati or '-'}</td><td>{vaccu_hidup or '-'}</td><td>{bbm}%</td><td>{rad}</td><td>{oli}</td><td>{ptg}</td></tr>"
             
         hari_ini = datetime.now(WIB).strftime('%Y-%m-%d')
         
@@ -281,6 +282,7 @@ def maintenance_routine():
         .form-container{{background:white;padding:20px;border-radius:10px;max-width:550px;margin:0 auto;box-shadow:0 2px 5px rgba(0,0,0,0.1)}}
         .form-group{{margin-bottom:15px}}label{{display:block;margin-bottom:5px;font-weight:bold;font-size:14px}}
         .grid-3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:15px}}
+        .grid-2{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px}}
         input,select,button{{width:100%;padding:10px;font-size:16px;border-radius:5px;border:1px solid #ddd;box-sizing:border-box}}
         button{{background:#009688;color:white;border:none;cursor:pointer;font-weight:bold;margin-top:10px}}
         button:hover{{background:#00796b}}
@@ -309,7 +311,12 @@ def maintenance_routine():
                     <div><label>V3 - V1</label><input type="text" name="voltase_3p_v3v1" placeholder="380V" required></div>
                 </div>
 
-                <div class="form-group"><label>Voltase Accu</label><input type="text" name="voltase_accu" placeholder="Contoh: 12.6V" required></div>
+                <h4>Kondisi Voltase Accu</h4>
+                <div class="grid-2">
+                    <div><label>Accu (Mesin Mati)</label><input type="text" name="voltase_accu_mati" placeholder="Contoh: 12.4V" required></div>
+                    <div><label>Accu (Mesin Menyala)</label><input type="text" name="voltase_accu_hidup" placeholder="Contoh: 14.2V" required></div>
+                </div>
+
                 <div class="form-group"><label>% BBM</label><input type="number" name="bbm_persen" placeholder="Contoh: 85" min="0" max="100" required></div>
                 <div class="form-group"><label>Air Radiator</label>
                     <select name="air_radiator">
@@ -332,7 +339,7 @@ def maintenance_routine():
         <table>
             <thead>
                 <tr>
-                    <th>Tanggal</th><th>Jam Kerja</th><th>1P-V1</th><th>1P-V2</th><th>1P-V3</th><th>3P-V1V2</th><th>3P-V2V3</th><th>3P-V3V1</th><th>V. Accu</th><th>% BBM</th><th>Radiator</th><th>Oli</th><th>Petugas</th>
+                    <th>Tanggal</th><th>Jam Kerja</th><th>1P-V1</th><th>1P-V2</th><th>1P-V3</th><th>3P-V1V2</th><th>3P-V2V3</th><th>3P-V3V1</th><th>Accu Mati</th><th>Accu Hidup</th><th>% BBM</th><th>Radiator</th><th>Oli</th><th>Petugas</th>
                 </tr>
             </thead>
             <tbody>
@@ -340,7 +347,7 @@ def maintenance_routine():
             </tbody>
         </table>
         <script>
-            const headers = ["Tanggal", "Jam Kerja", "1P-V1", "1P-V2", "1P-V3", "3P-V1V2", "3P-V2V3", "3P-V3V1", "V. Accu", "% BBM", "Radiator", "Oli", "Petugas"];
+            const headers = ["Tanggal", "Jam Kerja", "1P-V1", "1P-V2", "1P-V3", "3P-V1V2", "3P-V2V3", "3P-V3V1", "Accu Mati", "Accu Hidup", "% BBM", "Radiator", "Oli", "Petugas"];
             document.querySelectorAll("tbody tr").forEach(tr => {{
                 tr.querySelectorAll("td").forEach((td, i) => {{
                     td.setAttribute("data-label", headers[i]);
@@ -607,7 +614,7 @@ def main():
     cur.execute("CREATE TABLE IF NOT EXISTS libur_nasional (tanggal DATE PRIMARY KEY)")
     cur.execute("CREATE TABLE IF NOT EXISTS genset_log (id SERIAL PRIMARY KEY, tanggal DATE NOT NULL, jam_mulai TIME NOT NULL, jam_selesai TIME, bbm_awal INTEGER NOT NULL, bbm_akhir INTEGER, pemakaian INTEGER, sisa INTEGER, petugas TEXT, user_id BIGINT)")
     
-    # Inisialisasi otomatis tabel baru maintenance di database
+    # Inisialisasi otomatis tabel baru maintenance di database (Disisipkan voltase_accu_mati & voltase_accu_hidup)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS genset_maintenance (
             id SERIAL PRIMARY KEY, 
@@ -619,7 +626,8 @@ def main():
             voltase_3p_v1v2 TEXT, 
             voltase_3p_v2v3 TEXT, 
             voltase_3p_v3v1 TEXT, 
-            voltase_accu TEXT, 
+            voltase_accu_mati TEXT, 
+            voltase_accu_hidup TEXT, 
             bbm_persen TEXT, 
             air_radiator TEXT, 
             oli_mesin TEXT, 
@@ -655,7 +663,7 @@ def main():
     app.add_handler(genset_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot jalan... Absen + Genset + Grafik + Maintenance 3Phase")
+    print("Bot jalan... Absen + Genset + Grafik + Maintenance 3Phase (Dual Accu Mode)")
     app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
