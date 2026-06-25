@@ -94,7 +94,7 @@ def home():
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-# ===== WEB GENSET: MERAH <30% + GRAFIK + DURASI =====
+# ===== WEB GENSET: PERAHUAN BANNER TETAP AMAN =====
 @app_flask.route('/genset')
 def home_genset():
     try:
@@ -146,6 +146,11 @@ def home_genset():
             row_class = "style='background:#ffebee;color:#c62828;font-weight:bold'" if sisa and sisa < 30 else ""
             rows += f"<tr {row_class}><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{durasi_str}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa}%</td><td>{petugas}</td></tr>"
 
+        # LOGIKA BANNER DIKORIDORKAN DI LUAR F-STRING BIAR TIDAK BUG
+        alert_html = ""
+        if any(s and s < 30 for s in data_sisa):
+            alert_html = '<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>'
+
         option_petugas = '<option value="">Semua Petugas</option>'
         for p in list_petugas:
             selected = 'selected' if p == nama else ''
@@ -175,7 +180,7 @@ def home_genset():
         </form></div>
 
         <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
-        {{f'<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>' if any(s and s < 30 for s in data_sisa) else ''}}
+        {alert_html}
 
         <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
 
@@ -217,7 +222,7 @@ def home_genset():
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
-# ===== WEB TAB: CEK MAINTENANCE RUTIN GENSET =====
+# ===== WEB TAB: CEK MAINTENANCE RUTIN GENSET (3 PHASE UPDATE) =====
 @app_flask.route('/maintenance', methods=['GET', 'POST'])
 def maintenance_routine():
     try:
@@ -500,7 +505,7 @@ async def genset_bbm_akhir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cur.execute("INSERT INTO genset_log (tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas, user_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", (tanggal, context.user_data['jam_mulai'], jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, nama, user_id))
         conn.commit()
         conn.close()
-        await update.message.reply_text(f"✅ *Genset Dicatar*\n📅 {tanggal}\n⏰ {context.user_data['jam_mulai']} - {jam_selesai}\n⛽ {bbm_awal}% → {bbm_akhir}%\n🔥 Pakai: {pemakaian}%\n💧 Sisa: {sisa}%\n👤 {nama}\n\nKetik /start buat balik ke menu", parse_mode='Markdown')
+        await update.message.reply_text(f"✅ *Genset Dicatat*\n📅 {tanggal}\n⏰ {context.user_data['jam_mulai']} - {jam_selesai}\n⛽ {bbm_awal}% → {bbm_akhir}%\n🔥 Pakai: {pemakaian}%\n💧 Sisa: {sisa}%\n👤 {nama}\n\nKetik /start buat balik ke menu", parse_mode='Markdown')
         context.user_data.clear()
         return ConversationHandler.END
     except:
@@ -602,7 +607,7 @@ def main():
     cur.execute("CREATE TABLE IF NOT EXISTS libur_nasional (tanggal DATE PRIMARY KEY)")
     cur.execute("CREATE TABLE IF NOT EXISTS genset_log (id SERIAL PRIMARY KEY, tanggal DATE NOT NULL, jam_mulai TIME NOT NULL, jam_selesai TIME, bbm_awal INTEGER NOT NULL, bbm_akhir INTEGER, pemakaian INTEGER, sisa INTEGER, petugas TEXT, user_id BIGINT)")
     
-    # Inisialisasi Tabel Maintenance Genset Dengan Pembagian 3 Kolom Voltase
+    # Inisialisasi otomatis tabel baru maintenance di database
     cur.execute("""
         CREATE TABLE IF NOT EXISTS genset_maintenance (
             id SERIAL PRIMARY KEY, 
@@ -621,7 +626,6 @@ def main():
             petugas TEXT
         )
     """)
-    
     conn.commit()
     conn.close()
     print("Database siap")
@@ -651,7 +655,7 @@ def main():
     app.add_handler(genset_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot jalan... Absen + Genset + Grafik + Durasi")
+    print("Bot jalan... Absen + Genset + Grafik + Maintenance 3Phase")
     app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
