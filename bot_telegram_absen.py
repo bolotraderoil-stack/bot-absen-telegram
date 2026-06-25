@@ -152,7 +152,7 @@ def home_genset():
             option_petugas += f'<option value="{p}" {selected}>{p}</option>'
 
         navbar = """<nav style="background:#FF9800;padding:15px;text-align:center">
-        <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
+        
         <a href="/genset" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a></nav>"""
 
         html = navbar + f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Log Genset</title>
