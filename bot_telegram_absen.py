@@ -198,12 +198,23 @@ def maintenance_routine():
             """, (tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu_mati, voltase_accu_hidup, bbm_persen, air_radiator, oli_mesin, petugas))
             conn.commit()
         
-        cur.execute("""
+        # Ambil filter bulan dari parameter GET (format: YYYY-MM)
+        bulan = request.args.get('bulan', '')
+        
+        sql = """
             SELECT tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, 
                    voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu_mati, voltase_accu_hidup, 
                    bbm_persen, air_radiator, oli_mesin, petugas 
-            FROM genset_maintenance ORDER BY tanggal DESC, id DESC LIMIT 100
-        """)
+            FROM genset_maintenance WHERE 1=1
+        """
+        params = []
+        if bulan:
+            sql += " AND TO_CHAR(tanggal, 'YYYY-MM') = %s"
+            params.append(bulan)
+            
+        sql += " ORDER BY tanggal DESC, id DESC LIMIT 100"
+        
+        cur.execute(sql, params)
         data = cur.fetchall()
         conn.close()
         
@@ -234,8 +245,10 @@ def maintenance_routine():
         input,select,button{{width:100%;padding:10px;font-size:16px;border-radius:5px;border:1px solid #ddd;box-sizing:border-box}}
         button{{background:#009688;color:white;border:none;cursor:pointer;font-weight:bold;margin-top:10px}}
         button:hover{{background:#00796b}}
-        .export-btn-container{{text-align:center;margin:20px 0;position:relative;z-index:1}}
-        .export-btn{{display:inline-block;padding:10px 20px;background:#009688;color:white;text-decoration:none;border-radius:5px;font-weight:bold;width:auto}}
+        .filter-container{{background:white;padding:15px;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.05);margin:20px auto 10px auto;position:relative;z-index:1;text-align:center}}
+        .filter-form{{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap}}
+        .filter-form input, .filter-form button, .filter-form a{{width:auto;margin:0;padding:8px 15px;font-size:15px}}
+        .export-btn{{display:inline-block;padding:8px 15px;background:#009688;color:white;text-decoration:none;border-radius:5px;font-weight:bold;width:auto;box-sizing:border-box;font-size:15px}}
         .export-btn:hover{{background:#00796b}}
         @media (max-width:768px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
         td{{border:none;position:relative;padding-left:50%;text-align:left}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
@@ -243,10 +256,6 @@ def maintenance_routine():
         
         <div class="container">
             <h2>🔧 Cek Maintenance Rutin Genset</h2>
-            
-            <div class="export-btn-container">
-                <a href="/export_maintenance" class="export-btn">⬇️ Export CSV Maintenance</a>
-            </div>
 
             <div class="form-container">
                 <h3>📝 Input Log Maintenance</h3>
@@ -290,6 +299,16 @@ def maintenance_routine():
                     </div>
                     <div class="form-group"><label>Nama Petugas</label><input type="text" name="petugas" placeholder="Nama Anda" required></div>
                     <button type="submit">Simpan Log Maintenance</button>
+                </form>
+            </div>
+            
+            <div class="filter-container">
+                <form method="get" class="filter-form">
+                    <label><b>Filter Bulan:</b></label>
+                    <input type="month" name="bulan" value="{bulan}">
+                    <button type="submit" style="background:#009688;color:white;">Filter</button>
+                    <a href="/maintenance"><button type="button" style="background:#757575;color:white;">Reset (All)</button></a>
+                    <a href="/export_maintenance?bulan={bulan}" class="export-btn">⬇️ Export CSV</a>
                 </form>
             </div>
             
@@ -358,14 +377,24 @@ def export_genset():
 @app_flask.route('/export_maintenance')
 def export_maintenance():
     try:
+        bulan = request.args.get('bulan', '')
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("""
+        
+        sql = """
             SELECT tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, 
                    voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu_mati, voltase_accu_hidup, 
                    bbm_persen, air_radiator, oli_mesin, petugas 
-            FROM genset_maintenance ORDER BY tanggal DESC, id DESC
-        """)
+            FROM genset_maintenance WHERE 1=1
+        """
+        params = []
+        if bulan:
+            sql += " AND TO_CHAR(tanggal, 'YYYY-MM') = %s"
+            params.append(bulan)
+            
+        sql += " ORDER BY tanggal DESC, id DESC"
+        
+        cur.execute(sql, params)
         data = cur.fetchall()
         conn.close()
         if not data: return "Belum ada data maintenance", 404
@@ -375,7 +404,9 @@ def export_maintenance():
         for row in data:
             writer.writerow(row)
         output.seek(0)
-        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=genset_maintenance_log.csv"})
+        
+        filename = f"genset_maintenance_{bulan if bulan else 'all'}.csv"
+        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename={filename}"})
     except Exception as e:
         return f"Error: {e}", 500
 
