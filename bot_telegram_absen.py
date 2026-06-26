@@ -98,26 +98,37 @@ def home_genset():
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="icon" type="image/png" href="/logo.png">
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <style>body{{font-family:Arial;padding:20px;background:#f5f5f5;position:relative;min-height:100vh}}h2{{text-align:center}}
+        <style>
+        body{{font-family:Arial;margin:0;padding:0;background:#f5f5f5;position:relative;min-height:100vh}}
         body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.06;z-index:-1;pointer-events:none;}}
-        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
+        .container{{max-width:1100px;margin:0 auto;padding:20px;box-sizing:border-box}}
+        h2{{text-align:center;margin-top:10px}}
+        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1;box-shadow:0 2px 5px rgba(0,0,0,0.05);border-radius:8px;overflow:hidden}}
+        th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
         th{{background:#FF9800;color:white}}tr:hover{{background:#fff3e0}}
-       .filter{{text-align:center;margin:20px;position:relative;z-index:1}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
-       .chart-container{{background:white;padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.1);margin:20px 0;position:relative;z-index:1}}
-       .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
-        </style></head><body><h2>⛽ Log Penggunaan Genset & BBM</h2>
+        .filter{{text-align:center;margin:20px;position:relative;z-index:1}}
+        input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
+        .chart-container{{background:white;padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.1);margin:20px auto;position:relative;z-index:1}}
+        .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
+        </style></head><body>
+        
+        <div class="container">
+            <h2>⛽ Log Penggunaan Genset & BBM</h2>
 
-        <div class="filter"><form method="get">
-        <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
-        <select name="nama">{option_petugas}</select>
-        <button>Filter</button><a href="/"><button type="button">Reset</button></a>
-        <a href="/export_genset?tanggal={tanggal if tanggal else ''}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV</a>
-        </form></div>
+            <div class="filter"><form method="get">
+            <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
+            <select name="nama">{option_petugas}</select>
+            <button>Filter</button><a href="/"><button type="button">Reset</button></a>
+            <a href="/export_genset?tanggal={tanggal if tanggal else ''}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV</a>
+            </form></div>
 
-        <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
-        {alert_html}
+            <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
+            {alert_html}
 
-        <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
+            <div style="overflow-x:auto;">
+                <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
+            </div>
+        </div>
 
         <script>
         const ctx = document.getElementById('grafikBBM');
@@ -211,11 +222,12 @@ def maintenance_routine():
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="icon" type="image/png" href="/logo.png">
         <style>
-        body{{font-family:Arial;padding:20px;background:#f5f5f5;position:relative;min-height:100vh}}h2,h3{{text-align:center}}h4{{margin:10px 0 5px 0;color:#009688;border-bottom:1px solid #ddd;padding-bottom:5px}}
+        body{{font-family:Arial;margin:0;padding:0;background:#f5f5f5;position:relative;min-height:100vh}}h2,h3{{text-align:center}}h4{{margin:10px 0 5px 0;color:#009688;border-bottom:1px solid #ddd;padding-bottom:5px}}
         body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.06;z-index:-1;pointer-events:none;}}
-        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center;font-size:14px}}
+        .container{{max-width:1100px;margin:0 auto;padding:20px;box-sizing:border-box}}
+        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1;box-shadow:0 2px 5px rgba(0,0,0,0.05);border-radius:8px;overflow:hidden}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center;font-size:14px}}
         th{{background:#009688;color:white}}tr:hover{{background:#e0f2f1}}
-        .form-container{{background:white;padding:20px;border-radius:10px;max-width:550px;margin:0 auto box-shadow:0 2px 5px rgba(0,0,0,0.1);position:relative;z-index:1}}
+        .form-container{{background:white;padding:20px;border-radius:10px;max-width:550px;margin:0 auto 20px auto;box-shadow:0 2px 5px rgba(0,0,0,0.1);position:relative;z-index:1}}
         .form-group{{margin-bottom:15px}}label{{display:block;margin-bottom:5px;font-weight:bold;font-size:14px}}
         .grid-3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:15px}}
         .grid-2{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px}}
@@ -223,72 +235,78 @@ def maintenance_routine():
         button{{background:#009688;color:white;border:none;cursor:pointer;font-weight:bold;margin-top:10px}}
         button:hover{{background:#00796b}}
         .export-btn-container{{text-align:center;margin:20px 0;position:relative;z-index:1}}
-        .export-btn{{display:inline-block;padding:10px 20px;background:#009688;color:white;text-decoration:none;border-radius:5px;font-weight:bold}}
+        .export-btn{{display:inline-block;padding:10px 20px;background:#009688;color:white;text-decoration:none;border-radius:5px;font-weight:bold;width:auto}}
         .export-btn:hover{{background:#00796b}}
         @media (max-width:768px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
         td{{border:none;position:relative;padding-left:50%;text-align:left}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
         </style></head><body>
-        <h2>🔧 Cek Maintenance Rutin Genset</h2>
         
-        <div class="export-btn-container">
-            <a href="/export_maintenance" class="export-btn">⬇️ Export CSV Maintenance</a>
+        <div class="container">
+            <h2>🔧 Cek Maintenance Rutin Genset</h2>
+            
+            <div class="export-btn-container">
+                <a href="/export_maintenance" class="export-btn">⬇️ Export CSV Maintenance</a>
+            </div>
+
+            <div class="form-container">
+                <h3>📝 Input Log Maintenance</h3>
+                <form method="post">
+                    <div class="form-group"><label>Tanggal</label><input type="date" name="tanggal" value="{hari_ini}" required></div>
+                    <div class="form-group"><label>Jam Penggunaan (Hour Meter)</label><input type="text" name="jam_penggunaan" placeholder="Contoh: 1250 Jam" required></div>
+                    
+                    <h4>Voltase 1 Phase (L - N)</h4>
+                    <div class="grid-3">
+                        <div><label>V1 (R-N)</label><input type="text" name="voltase_1p_v1" placeholder="220V" required></div>
+                        <div><label>V2 (S-N)</label><input type="text" name="voltase_1p_v2" placeholder="220V" required></div>
+                        <div><label>V3 (T-N)</label><input type="text" name="voltase_1p_v3" placeholder="220V" required></div>
+                    </div>
+
+                    <h4>Voltase 3 Phase (L - L)</h4>
+                    <div class="grid-3">
+                        <div><label>V1 - V2</label><input type="text" name="voltase_3p_v1v2" placeholder="380V" required></div>
+                        <div><label>V2 - V3</label><input type="text" name="voltase_3p_v2v3" placeholder="380V" required></div>
+                        <div><label>V3 - V1</label><input type="text" name="voltase_3p_v3v1" placeholder="380V" required></div>
+                    </div>
+
+                    <h4>Kondisi Voltase Accu</h4>
+                    <div class="grid-2">
+                        <div><label>Accu (Mesin Mati)</label><input type="text" name="voltase_accu_mati" placeholder="Contoh: 12.4V" required></div>
+                        <div><label>Accu (Mesin Menyala)</label><input type="text" name="voltase_accu_hidup" placeholder="Contoh: 14.2V" required></div>
+                    </div>
+
+                    <div class="form-group"><label>% BBM</label><input type="number" name="bbm_persen" placeholder="Contoh: 85" min="0" max="100" required></div>
+                    <div class="form-group"><label>Air Radiator</label>
+                        <select name="air_radiator">
+                            <option value="Bagus/Penuh">Bagus / Penuh</option>
+                            <option value="Kurang/Isi">Kurang / Perlu Tambah</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Oli Mesin</label>
+                        <select name="oli_mesin">
+                            <option value="Bagus/Cukup">Bagus / Cukup</option>
+                            <option value="Kurang/Tambah">Kurang / Perlu Tambah</option>
+                            <option value="Kotor/Wajib Ganti">Kotor / Wajib Ganti</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Nama Petugas</label><input type="text" name="petugas" placeholder="Nama Anda" required></div>
+                    <button type="submit">Simpan Log Maintenance</button>
+                </form>
+            </div>
+            
+            <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tanggal</th><th>Jam Kerja</th><th>1P-V1</th><th>1P-V2</th><th>1P-V3</th><th>3P-V1V2</th><th>3P-V2V3</th><th>3P-V3V1</th><th>Accu Mati</th><th>Accu Hidup</th><th>% BBM</th><th>Radiator</th><th>Oli</th><th>Petugas</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows}
+                    </tbody>
+                </table>
+            </div>
         </div>
 
-        <div class="form-container">
-            <h3>📝 Input Log Maintenance</h3>
-            <form method="post">
-                <div class="form-group"><label>Tanggal</label><input type="date" name="tanggal" value="{hari_ini}" required></div>
-                <div class="form-group"><label>Jam Penggunaan (Hour Meter)</label><input type="text" name="jam_penggunaan" placeholder="Contoh: 1250 Jam" required></div>
-                
-                <h4>Voltase 1 Phase (L - N)</h4>
-                <div class="grid-3">
-                    <div><label>V1 (R-N)</label><input type="text" name="voltase_1p_v1" placeholder="220V" required></div>
-                    <div><label>V2 (S-N)</label><input type="text" name="voltase_1p_v2" placeholder="220V" required></div>
-                    <div><label>V3 (T-N)</label><input type="text" name="voltase_1p_v3" placeholder="220V" required></div>
-                </div>
-
-                <h4>Voltase 3 Phase (L - L)</h4>
-                <div class="grid-3">
-                    <div><label>V1 - V2</label><input type="text" name="voltase_3p_v1v2" placeholder="380V" required></div>
-                    <div><label>V2 - V3</label><input type="text" name="voltase_3p_v2v3" placeholder="380V" required></div>
-                    <div><label>V3 - V1</label><input type="text" name="voltase_3p_v3v1" placeholder="380V" required></div>
-                </div>
-
-                <h4>Kondisi Voltase Accu</h4>
-                <div class="grid-2">
-                    <div><label>Accu (Mesin Mati)</label><input type="text" name="voltase_accu_mati" placeholder="Contoh: 12.4V" required></div>
-                    <div><label>Accu (Mesin Menyala)</label><input type="text" name="voltase_accu_hidup" placeholder="Contoh: 14.2V" required></div>
-                </div>
-
-                <div class="form-group"><label>% BBM</label><input type="number" name="bbm_persen" placeholder="Contoh: 85" min="0" max="100" required></div>
-                <div class="form-group"><label>Air Radiator</label>
-                    <select name="air_radiator">
-                        <option value="Bagus/Penuh">Bagus / Penuh</option>
-                        <option value="Kurang/Isi">Kurang / Perlu Tambah</option>
-                    </select>
-                </div>
-                <div class="form-group"><label>Oli Mesin</label>
-                    <select name="oli_mesin">
-                        <option value="Bagus/Cukup">Bagus / Cukup</option>
-                        <option value="Kurang/Tambah">Kurang / Perlu Tambah</option>
-                        <option value="Kotor/Wajib Ganti">Kotor / Wajib Ganti</option>
-                    </select>
-                </div>
-                <div class="form-group"><label>Nama Petugas</label><input type="text" name="petugas" placeholder="Nama Anda" required></div>
-                <button type="submit">Simpan Log Maintenance</button>
-            </form>
-        </div>
-        
-        <table>
-            <thead>
-                <tr>
-                    <th>Tanggal</th><th>Jam Kerja</th><th>1P-V1</th><th>1P-V2</th><th>1P-V3</th><th>3P-V1V2</th><th>3P-V2V3</th><th>3P-V3V1</th><th>Accu Mati</th><th>Accu Hidup</th><th>% BBM</th><th>Radiator</th><th>Oli</th><th>Petugas</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows}
-            </tbody>
-        </table>
         <script>
             const headers = ["Tanggal", "Jam Kerja", "1P-V1", "1P-V2", "1P-V3", "3P-V1V2", "3P-V2V3", "3P-V3V1", "Accu Mati", "Accu Hidup", "% BBM", "Radiator", "Oli", "Petugas"];
             document.querySelectorAll("tbody tr").forEach(tr => {{
@@ -632,7 +650,7 @@ def main():
     app.add_handler(genset_conv)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Bot jalan... Absen + Genset + Grafik + Maintenance (Dual Accu & Branding Mode)")
+    print("Bot jalan... Absen + Genset + Grafik + Maintenance (Dual Accu & Centered Page Style)")
     app.run_polling(drop_pending_updates=True, close_loop=False)
 
 if __name__ == "__main__":
