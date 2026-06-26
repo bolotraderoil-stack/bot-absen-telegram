@@ -22,7 +22,6 @@ def get_db():
 # ===== ROUTE UNTUK MENAMPILKAN LOGO / FAVICON =====
 @app_flask.route('/logo.png')
 def get_logo():
-    # Mencari file logo.png atau nama default kiriman Anda di folder yang sama
     if os.path.exists('logo.png'):
         return send_file('logo.png', mimetype='image/png')
     elif os.path.exists('1000430229.png'):
@@ -30,84 +29,7 @@ def get_logo():
     else:
         return "Logo tidak ditemukan. Pastikan file gambar ada di folder script.", 404
 
-# ===== WEB ABSEN: FILTER NAMA + BULAN =====
-@app_flask.route('/absen')
-def home():
-    try:
-        nama_filter = request.args.get('nama', '')
-        bulan_filter = request.args.get('bulan', '')
-
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT DISTINCT nama FROM absensi ORDER BY nama")
-        list_nama = [r[0] for r in cur.fetchall()]
-
-        sql = """
-            SELECT nama, tanggal, jam_datang, jam_pulang, status, alasan, telat,
-            EXTRACT(EPOCH FROM jam_pulang - jam_datang) as total_detik,
-            CASE WHEN jam_datang > TIME '09:00:00' THEN true ELSE false END as telat_flag
-            FROM absensi WHERE 1=1
-        """
-        params = []
-        if nama_filter:
-            sql += " AND nama ILIKE %s"
-            params.append(f"%{nama_filter}%")
-        if bulan_filter:
-            tahun, bulan = bulan_filter.split('-')
-            sql += " AND EXTRACT(YEAR FROM tanggal) = %s AND EXTRACT(MONTH FROM tanggal) = %s"
-            params.extend([tahun, bulan])
-        sql += " ORDER BY tanggal DESC, jam_datang DESC LIMIT 200"
-        cur.execute(sql, params)
-        data = cur.fetchall()
-        conn.close()
-
-        navbar = """<nav style="background:#4CAF50;padding:15px;text-align:center;position:relative;z-index:10">
-        <a href="/absen" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">📋 Absensi</a>
-        <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
-        <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
-
-        option_nama = '<option value="">Semua Karyawan</option>'
-        for n in list_nama:
-            selected = 'selected' if n == nama_filter else ''
-            option_nama += f'<option value="{n}" {selected}>{n}</option>'
-
-        html = navbar + f"""
-        <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Data Absensi</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="icon" type="image/png" href="/logo.png">
-        <style>body{{font-family:Arial;padding:20px;background:#f5f5f5;position:relative;min-height:100vh}}h2{{text-align:center}}
-        body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.06;z-index:-1;pointer-events:none;}}
-        table{{width:100%;border-collapse:collapse;background:white;position:relative;z-index:1}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
-        th{{background:#4CAF50;color:white}}tr:hover{{background:#f1f1f1}}
-       .telat{{background:#ffebee;color:#c62828;font-weight:bold}}
-       .status-izin{{color:orange}}.status-sakit{{color:red}}.status-cuti{{color:blue}}.status-lembur{{color:purple;font-weight:bold}}
-       .filter{{text-align:center;margin:20px;position:relative;z-index:1}}input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
-        @media (max-width:600px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
-        td{{border:none;position:relative;padding-left:50%}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
-        </style></head><body><h2>📋 Data Absensi</h2>
-        <div class="filter"><form method="get">
-        <select name="nama">{option_nama}</select>
-        <input type="month" name="bulan" value="{bulan_filter}">
-        <button>Filter</button><a href="/"><button type="button">Reset</button></a>
-        </form></div>
-        <table><thead><tr><th>Nama</th><th>Tanggal</th><th>Datang</th><th>Pulang</th><th>Status</th><th>Alasan</th><th>Total Jam</th></tr></thead><tbody>
-        """
-
-        for row in data:
-            nama, tanggal, datang, pulang, status, alasan, telat_db, total_detik, telat_flag = row
-            row_class = "telat" if telat_flag else ""
-            status_class = f"status-{status}" if status else ""
-            total_detik = int(total_detik) if total_detik else 0
-            h = total_detik // 3600
-            m = (total_detik % 3600) // 60
-            total_jam = f"{h:02d}j {m:02d}m" if total_detik else "-"
-            html += f"""<tr class="{row_class}"><td data-label="Nama">{nama}</td><td data-label="Tanggal">{tanggal}</td><td data-label="Datang">{datang.strftime('%H:%M:%S') if datang else '-'}</td><td data-label="Pulang">{pulang.strftime('%H:%M:%S') if pulang else '-'}</td><td data-label="Status" class="{status_class}">{status or 'hadir'}</td><td data-label="Alasan">{alasan or '-'}</td><td data-label="Total Jam">{total_jam}</td></tr>"""
-        html += """</tbody></table></body></html>"""
-        return html
-    except Exception as e:
-        return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
-
-# ===== WEB GENSET =====
+# ===== WEB GENSET (HALAMAN DEFAULT /) =====
 @app_flask.route('/')
 def home_genset():
     try:
@@ -169,7 +91,6 @@ def home_genset():
             option_petugas += f'<option value="{p}" {selected}>{p}</option>'
 
         navbar = """<nav style="background:#FF9800;padding:15px;text-align:center;position:relative;z-index:10">
-        
         <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
         <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
 
@@ -189,7 +110,7 @@ def home_genset():
         <div class="filter"><form method="get">
         <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
         <select name="nama">{option_petugas}</select>
-        <button>Filter</button><a href="/genset"><button type="button">Reset</button></a>
+        <button>Filter</button><a href="/"><button type="button">Reset</button></a>
         <a href="/export_genset?tanggal={tanggal if tanggal else ''}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV</a>
         </form></div>
 
@@ -276,7 +197,6 @@ def maintenance_routine():
         conn.close()
         
         navbar = """<nav style="background:#009688;padding:15px;text-align:center;position:relative;z-index:10">
-        
         <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
         <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
         
@@ -295,18 +215,25 @@ def maintenance_routine():
         body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.06;z-index:-1;pointer-events:none;}}
         table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1}}th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center;font-size:14px}}
         th{{background:#009688;color:white}}tr:hover{{background:#e0f2f1}}
-        .form-container{{background:white;padding:20px;border-radius:10px;max-width:550px;margin:0 auto;box-shadow:0 2px 5px rgba(0,0,0,0.1);position:relative;z-index:1}}
+        .form-container{{background:white;padding:20px;border-radius:10px;max-width:550px;margin:0 auto box-shadow:0 2px 5px rgba(0,0,0,0.1);position:relative;z-index:1}}
         .form-group{{margin-bottom:15px}}label{{display:block;margin-bottom:5px;font-weight:bold;font-size:14px}}
         .grid-3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:15px}}
         .grid-2{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px}}
         input,select,button{{width:100%;padding:10px;font-size:16px;border-radius:5px;border:1px solid #ddd;box-sizing:border-box}}
         button{{background:#009688;color:white;border:none;cursor:pointer;font-weight:bold;margin-top:10px}}
         button:hover{{background:#00796b}}
+        .export-btn-container{{text-align:center;margin:20px 0;position:relative;z-index:1}}
+        .export-btn{{display:inline-block;padding:10px 20px;background:#009688;color:white;text-decoration:none;border-radius:5px;font-weight:bold}}
+        .export-btn:hover{{background:#00796b}}
         @media (max-width:768px){{table,thead,tbody,th,td,tr{{display:block}}th{{display:none}}
         td{{border:none;position:relative;padding-left:50%;text-align:left}}td:before{{content:attr(data-label);position:absolute;left:10px;font-weight:bold}}}}
         </style></head><body>
         <h2>🔧 Cek Maintenance Rutin Genset</h2>
         
+        <div class="export-btn-container">
+            <a href="/export_maintenance" class="export-btn">⬇️ Export CSV Maintenance</a>
+        </div>
+
         <div class="form-container">
             <h3>📝 Input Log Maintenance</h3>
             <form method="post">
@@ -375,6 +302,7 @@ def maintenance_routine():
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
 
+# ===== EXPORT DATA GENSET =====
 @app_flask.route('/export_genset')
 def export_genset():
     try:
@@ -408,6 +336,32 @@ def export_genset():
     except Exception as e:
         return f"Error: {e}", 500
 
+# ===== EXPORT DATA MAINTENANCE =====
+@app_flask.route('/export_maintenance')
+def export_maintenance():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT tanggal, jam_penggunaan, voltase_1p_v1, voltase_1p_v2, voltase_1p_v3, 
+                   voltase_3p_v1v2, voltase_3p_v2v3, voltase_3p_v3v1, voltase_accu_mati, voltase_accu_hidup, 
+                   bbm_persen, air_radiator, oli_mesin, petugas 
+            FROM genset_maintenance ORDER BY tanggal DESC, id DESC
+        """)
+        data = cur.fetchall()
+        conn.close()
+        if not data: return "Belum ada data maintenance", 404
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Tanggal', 'Jam Kerja (Hour Meter)', '1P-V1', '1P-V2', '1P-V3', '3P-V1V2', '3P-V2V3', '3P-V3V1', 'Accu Mati', 'Accu Hidup', 'BBM %', 'Radiator', 'Oli', 'Petugas'])
+        for row in data:
+            writer.writerow(row)
+        output.seek(0)
+        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=genset_maintenance_log.csv"})
+    except Exception as e:
+        return f"Error: {e}", 500
+
+# ===== BOT TELEGRAM FUNCTIONS =====
 def is_libur(tanggal):
     if tanggal.weekday() == 6: return True, "Minggu"
     conn = get_db()
