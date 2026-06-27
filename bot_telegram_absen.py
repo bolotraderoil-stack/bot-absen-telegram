@@ -28,7 +28,6 @@ def get_logo():
         return send_file('1000430229.png', mimetype='image/png')
     else:
         return "Logo tidak ditemukan. Pastikan file gambar ada di folder script.", 404
-
 # ===== WEB GENSET (HALAMAN DEFAULT /) =====
 @app_flask.route('/')
 def home_genset():
@@ -57,12 +56,15 @@ def home_genset():
         labels = []
         data_sisa = []
         data_pakai = []
+        data_colors = [] # List untuk menyimpan warna batang
         info_detail = []
         data_durasi = []
         rows = ""
+        
         for r in data:
             tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = r
 
+            # Hitung durasi
             if mulai and selesai:
                 dt_mulai = datetime.combine(tanggal, mulai)
                 dt_selesai = datetime.combine(tanggal, selesai)
@@ -75,17 +77,23 @@ def home_genset():
                 durasi_str = "-"
 
             labels.append(f"{tanggal}")
-            data_sisa.append(sisa if sisa else 0)
+            sisa_val = sisa if sisa else 0
+            data_sisa.append(sisa_val)
             data_pakai.append(pakai if pakai else 0)
             data_durasi.append(durasi_str)
             info_detail.append(f"Tgl:{tanggal} | {mulai.strftime('%H:%M') if mulai else '-'}-{selesai.strftime('%H:%M') if selesai else '-'} | Durasi:{durasi_str} | Awal:{awal}% | Akhir:{akhir}% | Pakai:{pakai}% | Petugas:{petugas}")
 
-            row_class = "style='background:#ffebee;color:#c62828;font-weight:bold'" if sisa and sisa < 30 else ""
-            rows += f"<tr {row_class}><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{durasi_str}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa}%</td><td>{petugas}</td></tr>"
+            # Logika Warna: Merah jika < 30, Biru jika >= 30
+            warna = 'rgba(220, 53, 69, 0.8)' if sisa_val < 30 else 'rgba(54, 162, 235, 0.8)'
+            data_colors.append(warna)
 
+            row_class = "style='background:#ffebee;color:#c62828;font-weight:bold'" if sisa_val < 30 else ""
+            rows += f"<tr {row_class}><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{durasi_str}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa_val}%</td><td>{petugas}</td></tr>"
+
+        # Logika Alert: Hanya muncul jika DATA TERBARU < 30%
         alert_html = ""
-        if any(s and s < 30 for s in data_sisa):
-            alert_html = '<div class="alert-low">⚠️ PERHATIAN: Ada log dengan sisa BBM < 30%. Segera isi BBM!</div>'
+        if data_sisa and data_sisa[-1] < 30:
+            alert_html = '<div class="alert-low">⚠️ PERHATIAN: Sisa BBM saat ini rendah (< 30%). Segera isi BBM!</div>'
 
         option_petugas = '<option value="">Semua Petugas</option>'
         for p in list_petugas:
@@ -151,7 +159,7 @@ def home_genset():
                 datasets: [{{
                     label: 'Sisa BBM %',
                     data: {data_sisa},
-                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                    backgroundColor: {data_colors},
                     datalabels: {{
                         display: true,
                         color: 'white',
@@ -161,7 +169,6 @@ def home_genset():
                         font: {{ weight: 'bold', size: 13 }},
                         formatter: function(value, context) {{
                             let durasi = durasiArr[context.dataIndex];
-                            // Tampilkan durasi di dalam batang biru jika sisa > 15 (agar teks tidak meluber keluar)
                             if (durasi !== "-" && durasi !== "0j 0m" && value > 15) {{
                                 return ['Sisa: ' + value + '%', '⏳ ' + durasi];
                             }}
@@ -179,7 +186,6 @@ def home_genset():
                         align: 'top',
                         font: {{ weight: 'bold', size: 11 }},
                         formatter: function(value, context) {{
-                            // Label pemakaian melayang di atas batang oren
                             return value > 0 ? '-' + value + '%' : '';
                         }}
                     }}
