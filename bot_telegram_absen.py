@@ -103,25 +103,31 @@ def home_genset():
         navbar = """<nav style="background:#FF9800;padding:15px;text-align:center;position:relative;z-index:10">
         <a href="/" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">⛽ Genset BBM</a>
         <a href="/maintenance" style="color:white;margin:0 20px;text-decoration:none;font-weight:bold">🔧 Maintenance</a></nav>"""
-
         html = navbar + f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Log Genset</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="icon" type="image/png" href="/logo.png">
+        <!-- Tambahan Font Poppins untuk UI yang lebih modern -->
+        <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
         <style>
-        body{{font-family:Arial;margin:0;padding:0;background:#f5f5f5;position:relative;min-height:100vh}}
-        body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.06;z-index:-1;pointer-events:none;}}
+        body{{font-family:'Poppins', sans-serif;margin:0;padding:0;background:#f8f9fa;position:relative;min-height:100vh}}
+        body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.04;z-index:-1;pointer-events:none;}}
         .container{{max-width:1100px;margin:0 auto;padding:20px;box-sizing:border-box}}
-        h2{{text-align:center;margin-top:10px}}
-        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1;box-shadow:0 2px 5px rgba(0,0,0,0.05);border-radius:8px;overflow:hidden}}
-        th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
-        th{{background:#FF9800;color:white}}tr:hover{{background:#fff3e0}}
-        .filter{{text-align:center;margin:20px auto;padding:15px;background:white;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.05);position:relative;z-index:1;max-width:600px;}}
-        .filter form {{display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap;}}
-        input,select,button{{padding:8px 12px;font-size:15px;border-radius:5px;border:1px solid #ddd}}
-        .chart-container{{background:white;padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.1);margin:20px auto;position:relative;z-index:1;height:450px;}}
-        .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
+        h2{{text-align:center;margin-top:10px;color:#2c3e50;font-weight:700}}
+        table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1;box-shadow:0 4px 15px rgba(0,0,0,0.03);border-radius:10px;overflow:hidden}}
+        th,td{{padding:14px;border-bottom:1px solid #eee;text-align:center;font-size:14px}}
+        th{{background:#FF9800;color:white;font-weight:600}}
+        tr:hover{{background:#fffaf3}}
+        .filter{{text-align:center;margin:20px auto;padding:20px;background:white;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.03);position:relative;z-index:1;max-width:650px;}}
+        .filter form {{display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap;}}
+        input,select,button{{padding:10px 14px;font-size:14px;font-family:'Poppins', sans-serif;border-radius:8px;border:1px solid #ddd;outline:none}}
+        input:focus, select:focus{{border-color:#FF9800}}
+        button, .export-btn{{transition: all 0.3s ease;}}
+        button:hover, .export-btn:hover{{transform: translateY(-2px);box-shadow:0 4px 10px rgba(0,0,0,0.15)}}
+        /* Mempercantik Kontainer Chart */
+        .chart-container{{background:white;padding:25px;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,0.06);margin:20px auto;position:relative;z-index:1;height:480px;}}
+        .alert-low{{background:#fff0f0;color:#d32f2f;padding:12px;border-radius:8px;text-align:center;font-weight:600;margin:15px 0;border-left:4px solid #d32f2f;box-shadow:0 2px 8px rgba(211,47,47,0.1)}}
         </style></head><body>
         
         <div class="container">
@@ -132,12 +138,12 @@ def home_genset():
 
             <div class="filter">
                 <form method="get">
-                    <label><b>Filter Bulan:</b></label>
+                    <label style="color:#555;font-weight:600">Filter Bulan:</label>
                     <input type="month" name="bulan" value="{bulan if bulan else ''}">
                     <select name="nama">{option_petugas}</select>
-                    <button type="submit" style="background:#FF9800;color:white;font-weight:bold;border:none;cursor:pointer;">Filter</button>
-                    <a href="/"><button type="button" style="background:#757575;color:white;border:none;cursor:pointer;">Reset</button></a>
-                    <a href="/export_genset?bulan={bulan if bulan else ''}" style="padding:8px 12px;background:#4CAF50;color:white;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;border:none;">⬇️ Export CSV</a>
+                    <button type="submit" style="background:#FF9800;color:white;font-weight:600;border:none;cursor:pointer;">🔍 Filter</button>
+                    <a href="/"><button type="button" style="background:#757575;color:white;border:none;cursor:pointer;">🔄 Reset</button></a>
+                    <a href="/export_genset?bulan={bulan if bulan else ''}" class="export-btn" style="padding:10px 14px;background:#10b981;color:white;text-decoration:none;border-radius:8px;font-weight:600;display:inline-block;border:none;">⬇️ Export CSV</a>
                 </form>
             </div>
 
@@ -149,80 +155,137 @@ def home_genset():
 
         <script>
         Chart.register(ChartDataLabels);
-        const ctx = document.getElementById('grafikBBM');
+        Chart.defaults.font.family = "'Poppins', sans-serif";
+        Chart.defaults.color = '#718096';
+
+        const canvas = document.getElementById('grafikBBM');
+        const ctx = canvas.getContext('2d');
         const infoDetail = {info_detail};
         const durasiArr = {data_durasi};
-        new Chart(ctx, {
-    type: 'bar',
-    data: {
-        labels: {labels},
-        datasets: [{
-            label: 'Sisa BBM %',
-            data: {data_sisa},
-            backgroundColor: 'rgba(54, 162, 235, 0.7)', // Biru lebih soft
-            borderColor: 'rgba(54, 162, 235, 1)',
-            borderRadius: 8, // <--- KUNCI: Membuat ujung bar membulat
-            borderSkipped: false,
-            barPercentage: 0.6, // <--- Mengatur lebar batang
-            categoryPercentage: 0.8,
-            datalabels: {
-                display: true,
-                color: '#fff',
-                font: { weight: 'bold', size: 11 },
-                anchor: 'center',
-                align: 'center',
-            }
-        }, {
-            label: 'Pemakaian BBM %',
-            data: {data_pakai},
-            backgroundColor: 'rgba(255, 99, 132, 0.7)', // Warna Salmon lembut
-            borderRadius: 8,
-            barPercentage: 0.6,
-            categoryPercentage: 0.8,
-            datalabels: {
-                display: true,
-                color: '#444',
-                anchor: 'end',
-                align: 'top',
-                font: { weight: 'bold', size: 10 },
-            }
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            y: {
-                beginAtZero: true,
-                max: 110,
-                grid: {
-                    drawBorder: false,
-                    color: 'rgba(0,0,0,0.05)' // Grid dibuat sangat samar
-                },
-                ticks: { font: { size: 12 } }
-            },
-            x: {
-                grid: { display: false } // Menghilangkan garis vertikal
-            }
-        },
-        plugins: {
-            legend: {
-                position: 'top',
-                labels: { usePointStyle: true, boxWidth: 10 } // Legend jadi lebih rapi
-            },
-            tooltip: {
-                backgroundColor: 'rgba(0,0,0,0.8)', // Tooltip lebih elegan
-                padding: 10,
-                cornerRadius: 6,
-                callbacks: {
-                    afterLabel: function(context) { return infoDetail[context.dataIndex]; }
-                }
-            }
-        }
-    }
-});
 
-        </script></body></html>"""
+        // Custom Gradients
+        let gradientPakai = ctx.createLinearGradient(0, 0, 0, 400);
+        gradientPakai.addColorStop(0, 'rgba(255, 152, 0, 1)');
+        gradientPakai.addColorStop(1, 'rgba(255, 193, 7, 0.4)');
+
+        const rawColors = {data_colors};
+        const bgColorsSisa = rawColors.map(color => {{
+            let grad = ctx.createLinearGradient(0, 0, 0, 400);
+            if(color.includes('220, 53, 69')) {{ // Jika warna merah (Sisa Rendah)
+                grad.addColorStop(0, 'rgba(244, 63, 94, 1)');
+                grad.addColorStop(1, 'rgba(225, 29, 72, 0.4)');
+            }} else {{ // Jika warna biru (Sisa Aman)
+                grad.addColorStop(0, 'rgba(56, 189, 248, 1)');
+                grad.addColorStop(1, 'rgba(2, 132, 199, 0.4)');
+            }}
+            return grad;
+        }});
+
+        new Chart(ctx, {{
+            type: 'bar',
+            data: {{
+                labels: {labels},
+                datasets: [{{
+                    label: 'Sisa BBM %',
+                    data: {data_sisa},
+                    backgroundColor: bgColorsSisa,
+                    borderRadius: 8,          // Batang melengkung
+                    borderSkipped: false,
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.8,
+                    datalabels: {{
+                        display: true,
+                        color: 'white',
+                        anchor: 'center',
+                        align: 'center',
+                        font: {{ weight: '700', size: 12 }},
+                        formatter: function(value, context) {{
+                            let durasi = durasiArr[context.dataIndex];
+                            if (durasi !== "-" && durasi !== "0j 0m" && value > 15) {{
+                                return ['Sisa: ' + value + '%', '⏳ ' + durasi];
+                            }}
+                            return 'Sisa: ' + value + '%';
+                        }}
+                    }}
+                }}, {{
+                    label: 'Pemakaian BBM %',
+                    data: {data_pakai},
+                    backgroundColor: gradientPakai,
+                    borderRadius: 8,          // Batang melengkung
+                    borderSkipped: false,
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.8,
+                    datalabels: {{
+                        display: true,
+                        color: '#d97706',
+                        anchor: 'end',
+                        align: 'top',
+                        font: {{ weight: '700', size: 11 }},
+                        formatter: function(value, context) {{
+                            return value > 0 ? '-' + value + '%' : '';
+                        }}
+                    }}
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {{ padding: {{ top: 20 }} }},
+                animation: {{
+                    y: {{ duration: 1500, easing: 'easeOutQuart' }} // Animasi modern
+                }},
+                plugins: {{
+                    title: {{
+                        display: true, 
+                        text: '📊 Grafik Batang Penggunaan & Sisa BBM', 
+                        font: {{ size: 18, weight: '700' }},
+                        color: '#1e293b',
+                        padding: {{ bottom: 25 }}
+                    }},
+                    legend: {{
+                        position: 'top',
+                        labels: {{
+                            usePointStyle: true, // Ubah icon legend kotak jadi lingkaran
+                            boxWidth: 10,
+                            padding: 20,
+                            font: {{ size: 13, weight: '600' }}
+                        }}
+                    }},
+                    tooltip: {{
+                        backgroundColor: 'rgba(15, 23, 42, 0.95)', // Warna Tooltip lebih gelap/elegan
+                        titleFont: {{ size: 14, weight: '600' }},
+                        bodyFont: {{ size: 13 }},
+                        padding: 15,
+                        cornerRadius: 10,
+                        displayColors: true,
+                        callbacks: {{
+                            // Format tooltip agar tulisan tidak memanjang tapi ke bawah
+                            afterLabel: function(context) {{
+                                return infoDetail[context.dataIndex].split(' | ');
+                            }}
+                        }}
+                    }}
+                }},
+                scales: {{
+                    y: {{
+                        beginAtZero: true, 
+                        max: 110, 
+                        title: {{ display: true, text: 'Persentase BBM (%)', font: {{ weight: '600' }} }},
+                        grid: {{
+                            color: 'rgba(200, 200, 200, 0.3)',
+                            borderDash: [5, 5] // Garis putus-putus
+                        }},
+                        border: {{ display: false }}
+                    }},
+                    x: {{
+                        title: {{ display: false }},
+                        grid: {{ display: false }}, // Sumbu X bersih tanpa garis grid vertikal
+                        border: {{ display: false }}
+                    }}
+                }}
+            }}
+        }});
+        </script></body></html>""" 
         return html
     except Exception as e:
         return f"<h2>Error Koneksi DB</h2><pre>{e}</pre>", 500
