@@ -112,7 +112,7 @@ def home_genset():
         .filter{{text-align:center;margin:20px auto;padding:15px;background:white;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.05);position:relative;z-index:1;max-width:600px;}}
         .filter form {{display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap;}}
         input,select,button{{padding:8px 12px;font-size:15px;border-radius:5px;border:1px solid #ddd}}
-        .chart-container{{background:white;padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.1);margin:20px auto;position:relative;z-index:1}}
+        .chart-container{{background:white;padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.1);margin:20px auto;position:relative;z-index:1;height:450px;}}
         .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
         </style></head><body>
         
@@ -148,32 +148,51 @@ def home_genset():
             data: {{
                 labels: {labels},
                 datasets: [{{
+                    label: 'Sisa BBM %',
+                    data: {data_sisa},
+                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                    datalabels: {{
+                        display: true,
+                        color: 'white',
+                        anchor: 'center',
+                        align: 'center',
+                        textAlign: 'center',
+                        font: {{ weight: 'bold', size: 13 }},
+                        formatter: function(value, context) {{
+                            let durasi = durasiArr[context.dataIndex];
+                            // Tampilkan durasi di dalam batang biru jika sisa > 15 (agar teks tidak meluber keluar)
+                            if (durasi !== "-" && durasi !== "0j 0m" && value > 15) {{
+                                return ['Sisa: ' + value + '%', '⏳ ' + durasi];
+                            }}
+                            return 'Sisa: ' + value + '%';
+                        }}
+                    }}
+                }}, {{
                     label: 'Pemakaian BBM %',
                     data: {data_pakai},
                     backgroundColor: 'rgba(255, 152, 0, 0.8)',
                     datalabels: {{
                         display: true,
-                        color: 'white',
-                        font: {{ weight: 'bold' }},
+                        color: '#c62828',
+                        anchor: 'end',
+                        align: 'top',
+                        font: {{ weight: 'bold', size: 11 }},
                         formatter: function(value, context) {{
-                            return value > 0 ? durasiArr[context.dataIndex] : '';
+                            // Label pemakaian melayang di atas batang oren
+                            return value > 0 ? '-' + value + '%' : '';
                         }}
                     }}
-                }}, {{
-                    label: 'Sisa BBM %',
-                    data: {data_sisa},
-                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
-                    datalabels: {{ display: false }}
                 }}]
             }},
             options: {{
                 responsive: true,
+                maintainAspectRatio: false,
                 plugins: {{
-                    title: {{display: true, text: 'Grafik Batang Penggunaan BBM Genset', font: {{size: 18}}}},
+                    title: {{display: true, text: 'Grafik Batang Penggunaan & Sisa BBM', font: {{size: 17}}}},
                     tooltip: {{callbacks: {{afterLabel: function(context) {{return infoDetail[context.dataIndex];}}}}}}
                 }},
                 scales: {{
-                    y: {{beginAtZero: true, max: 100, title: {{display: true, text: 'Persentase BBM %'}}}},
+                    y: {{beginAtZero: true, max: 110, title: {{display: true, text: 'Persentase BBM %'}}}},
                     x: {{title: {{display: true, text: 'Tanggal Digunakan'}}}}
                 }}
             }}
