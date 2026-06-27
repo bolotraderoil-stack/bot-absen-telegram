@@ -237,7 +237,7 @@ def home_genset():
                 plugins: {{
                     title: {{
                         display: true, 
-                        text: '📊 Grafik Batang Penggunaan & Sisa BBM', 
+                        text: '📊 Grafik Penggunaan & BBM didalam Genset', 
                         font: {{ size: 18, weight: '700' }},
                         color: '#1e293b',
                         padding: {{ bottom: 25 }}
