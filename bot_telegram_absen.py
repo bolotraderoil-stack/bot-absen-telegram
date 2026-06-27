@@ -33,7 +33,7 @@ def get_logo():
 @app_flask.route('/')
 def home_genset():
     try:
-        tanggal = request.args.get('tanggal')
+        bulan = request.args.get('bulan', '')
         nama = request.args.get('nama', '')
         conn = get_db()
         cur = conn.cursor()
@@ -43,9 +43,9 @@ def home_genset():
 
         sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log WHERE 1=1"
         params = []
-        if tanggal:
-            sql += " AND tanggal=%s"
-            params.append(tanggal)
+        if bulan:
+            sql += " AND TO_CHAR(tanggal, 'YYYY-MM') = %s"
+            params.append(bulan)
         if nama:
             sql += " AND petugas ILIKE %s"
             params.append(f"%{nama}%")
@@ -58,6 +58,7 @@ def home_genset():
         data_sisa = []
         data_pakai = []
         info_detail = []
+        data_durasi = []
         rows = ""
         for r in data:
             tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = r
@@ -73,10 +74,11 @@ def home_genset():
             else:
                 durasi_str = "-"
 
-            labels.append(f"{tanggal} {mulai.strftime('%H:%M') if mulai else '-'}")
+            labels.append(f"{tanggal}")
             data_sisa.append(sisa if sisa else 0)
             data_pakai.append(pakai if pakai else 0)
-            info_detail.append(f"Tgl:{tanggal} | {mulai.strftime('%H:%M')}-{selesai.strftime('%H:%M') if selesai else '-'} | Durasi:{durasi_str} | Awal:{awal}% | Akhir:{akhir}% | Pakai:{pakai}% | Petugas:{petugas}")
+            data_durasi.append(durasi_str)
+            info_detail.append(f"Tgl:{tanggal} | {mulai.strftime('%H:%M') if mulai else '-'}-{selesai.strftime('%H:%M') if selesai else '-'} | Durasi:{durasi_str} | Awal:{awal}% | Akhir:{akhir}% | Pakai:{pakai}% | Petugas:{petugas}")
 
             row_class = "style='background:#ffebee;color:#c62828;font-weight:bold'" if sisa and sisa < 30 else ""
             rows += f"<tr {row_class}><td>{tanggal}</td><td>{mulai.strftime('%H:%M') if mulai else '-'}</td><td>{selesai.strftime('%H:%M') if selesai else '-'}</td><td>{durasi_str}</td><td>{awal}%</td><td>{akhir}%</td><td>{pakai}%</td><td>{sisa}%</td><td>{petugas}</td></tr>"
@@ -98,6 +100,7 @@ def home_genset():
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="icon" type="image/png" href="/logo.png">
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
         <style>
         body{{font-family:Arial;margin:0;padding:0;background:#f5f5f5;position:relative;min-height:100vh}}
         body::before {{content:"";position:fixed;top:0;left:0;right:0;bottom:0;background:url('/logo.png') no-repeat center center;background-size:350px;opacity:0.06;z-index:-1;pointer-events:none;}}
@@ -106,8 +109,9 @@ def home_genset():
         table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;position:relative;z-index:1;box-shadow:0 2px 5px rgba(0,0,0,0.05);border-radius:8px;overflow:hidden}}
         th,td{{padding:12px;border-bottom:1px solid #ddd;text-align:center}}
         th{{background:#FF9800;color:white}}tr:hover{{background:#fff3e0}}
-        .filter{{text-align:center;margin:20px;position:relative;z-index:1}}
-        input,select,button{{padding:8px 12px;font-size:16px;margin:5px;border-radius:5px;border:1px solid #ddd}}
+        .filter{{text-align:center;margin:20px auto;padding:15px;background:white;border-radius:8px;box-shadow:0 2px 5px rgba(0,0,0,0.05);position:relative;z-index:1;max-width:600px;}}
+        .filter form {{display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap;}}
+        input,select,button{{padding:8px 12px;font-size:15px;border-radius:5px;border:1px solid #ddd}}
         .chart-container{{background:white;padding:20px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.1);margin:20px auto;position:relative;z-index:1}}
         .alert-low{{background:#ffebee;color:#c62828;padding:10px;border-radius:5px;text-align:center;font-weight:bold;margin:10px 0}}
         </style></head><body>
@@ -115,51 +119,62 @@ def home_genset():
         <div class="container">
             <h2>⛽ Log Penggunaan Genset & BBM</h2>
 
-            <div class="filter"><form method="get">
-            <input type="date" name="tanggal" value="{tanggal if tanggal else ''}">
-            <select name="nama">{option_petugas}</select>
-            <button>Filter</button><a href="/"><button type="button">Reset</button></a>
-            <a href="/export_genset?tanggal={tanggal if tanggal else ''}" style="padding:8px 12px;background:#FF9800;color:white;text-decoration:none;border-radius:5px;margin-left:10px">⬇️ Export CSV</a>
-            </form></div>
-
             <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
             {alert_html}
 
             <div style="overflow-x:auto;">
                 <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
             </div>
+            
+            <div class="filter">
+                <form method="get">
+                    <label><b>Filter Bulan:</b></label>
+                    <input type="month" name="bulan" value="{bulan if bulan else ''}">
+                    <select name="nama">{option_petugas}</select>
+                    <button type="submit" style="background:#FF9800;color:white;font-weight:bold;border:none;cursor:pointer;">Filter</button>
+                    <a href="/"><button type="button" style="background:#757575;color:white;border:none;cursor:pointer;">Reset</button></a>
+                    <a href="/export_genset?bulan={bulan if bulan else ''}" style="padding:8px 12px;background:#4CAF50;color:white;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;border:none;">⬇️ Export CSV</a>
+                </form>
+            </div>
         </div>
 
         <script>
+        Chart.register(ChartDataLabels);
         const ctx = document.getElementById('grafikBBM');
         const infoDetail = {info_detail};
+        const durasiArr = {data_durasi};
         new Chart(ctx, {{
-            type: 'line',
+            type: 'bar',
             data: {{
                 labels: {labels},
                 datasets: [{{
-                    label: 'Sisa BBM %',
-                    data: {data_sisa},
-                    borderColor: 'rgb(255, 99, 132)',
-                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                    tension: 0.4, fill: true, pointRadius: 5, pointHoverRadius: 8
-                }}, {{
                     label: 'Pemakaian BBM %',
                     data: {data_pakai},
-                    borderColor: 'rgb(54, 162, 235)',
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    tension: 0.4, fill: true, pointRadius: 5, pointHoverRadius: 8
+                    backgroundColor: 'rgba(255, 152, 0, 0.8)',
+                    datalabels: {{
+                        display: true,
+                        color: 'white',
+                        font: {{ weight: 'bold' }},
+                        formatter: function(value, context) {{
+                            return value > 0 ? durasiArr[context.dataIndex] : '';
+                        }}
+                    }}
+                }}, {{
+                    label: 'Sisa BBM %',
+                    data: {data_sisa},
+                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                    datalabels: {{ display: false }}
                 }}]
             }},
             options: {{
                 responsive: true,
                 plugins: {{
-                    title: {{display: true, text: 'Grafik Penggunaan & Sisa BBM Genset', font: {{size: 18}}}},
+                    title: {{display: true, text: 'Grafik Batang Penggunaan BBM Genset', font: {{size: 18}}}},
                     tooltip: {{callbacks: {{afterLabel: function(context) {{return infoDetail[context.dataIndex];}}}}}}
                 }},
                 scales: {{
                     y: {{beginAtZero: true, max: 100, title: {{display: true, text: 'Persentase BBM %'}}}},
-                    x: {{title: {{display: true, text: 'Tanggal & Jam'}}}}
+                    x: {{title: {{display: true, text: 'Tanggal Digunakan'}}}}
                 }}
             }}
         }});
@@ -343,19 +358,28 @@ def maintenance_routine():
 @app_flask.route('/export_genset')
 def export_genset():
     try:
-        tanggal = request.args.get('tanggal')
+        bulan = request.args.get('bulan', '')
         conn = get_db()
         cur = conn.cursor()
-        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log"
-        if tanggal: sql += f" WHERE tanggal='{tanggal}' ORDER BY jam_mulai"
-        else: sql += " ORDER BY tanggal DESC, jam_mulai DESC"
-        cur.execute(sql)
+        
+        sql = "SELECT tanggal, jam_mulai, jam_selesai, bbm_awal, bbm_akhir, pemakaian, sisa, petugas FROM genset_log WHERE 1=1"
+        params = []
+        if bulan:
+            sql += " AND TO_CHAR(tanggal, 'YYYY-MM') = %s"
+            params.append(bulan)
+            
+        sql += " ORDER BY tanggal DESC, jam_mulai DESC"
+        
+        cur.execute(sql, params)
         data = cur.fetchall()
         conn.close()
+        
         if not data: return "Belum ada data genset", 404
+        
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(['Tanggal', 'Jam Mulai', 'Jam Selesai', 'Durasi', 'BBM Awal %', 'BBM Akhir %', 'Pemakaian %', 'Sisa %', 'Petugas'])
+        
         for row in data:
             tanggal, mulai, selesai, awal, akhir, pakai, sisa, petugas = row
             if mulai and selesai:
@@ -367,9 +391,12 @@ def export_genset():
                 m = int((durasi_detik % 3600) // 60)
                 durasi_str = f"{h}j {m}m"
             else: durasi_str = "-"
+            
             writer.writerow([tanggal, mulai.strftime('%H:%M') if mulai else '-', selesai.strftime('%H:%M') if selesai else '-', durasi_str, awal, akhir, pakai, sisa, petugas])
+            
         output.seek(0)
-        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename=genset_log_{tanggal or 'all'}.csv"})
+        filename = f"genset_log_{bulan if bulan else 'all'}.csv"
+        return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename={filename}"})
     except Exception as e:
         return f"Error: {e}", 500
 
