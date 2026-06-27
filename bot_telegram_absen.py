@@ -152,58 +152,76 @@ def home_genset():
         const ctx = document.getElementById('grafikBBM');
         const infoDetail = {info_detail};
         const durasiArr = {data_durasi};
-        new Chart(ctx, {{
-            type: 'bar',
-            data: {{
-                labels: {labels},
-                datasets: [{{
-                    label: 'Sisa BBM %',
-                    data: {data_sisa},
-                    backgroundColor: {data_colors},
-                    datalabels: {{
-                        display: true,
-                        color: 'white',
-                        anchor: 'center',
-                        align: 'center',
-                        textAlign: 'center',
-                        font: {{ weight: 'bold', size: 13 }},
-                        formatter: function(value, context) {{
-                            let durasi = durasiArr[context.dataIndex];
-                            if (durasi !== "-" && durasi !== "0j 0m" && value > 15) {{
-                                return ['Sisa: ' + value + '%', '⏳ ' + durasi];
-                            }}
-                            return 'Sisa: ' + value + '%';
-                        }}
-                    }}
-                }}, {{
-                    label: 'Pemakaian BBM %',
-                    data: {data_pakai},
-                    backgroundColor: 'rgba(255, 152, 0, 0.8)',
-                    datalabels: {{
-                        display: true,
-                        color: '#c62828',
-                        anchor: 'end',
-                        align: 'top',
-                        font: {{ weight: 'bold', size: 11 }},
-                        formatter: function(value, context) {{
-                            return value > 0 ? '-' + value + '%' : '';
-                        }}
-                    }}
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {{
-                    title: {{display: true, text: 'Grafik Batang Penggunaan & Sisa BBM', font: {{size: 17}}}},
-                    tooltip: {{callbacks: {{afterLabel: function(context) {{return infoDetail[context.dataIndex];}}}}}}
-                }},
-                scales: {{
-                    y: {{beginAtZero: true, max: 110, title: {{display: true, text: 'Persentase BBM %'}}}},
-                    x: {{title: {{display: true, text: 'Tanggal Digunakan'}}}}
-                }}
-            }}
-        }});
+        new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: {labels},
+        datasets: [{
+            label: 'Sisa BBM %',
+            data: {data_sisa},
+            backgroundColor: 'rgba(54, 162, 235, 0.7)', // Biru lebih soft
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderRadius: 8, // <--- KUNCI: Membuat ujung bar membulat
+            borderSkipped: false,
+            barPercentage: 0.6, // <--- Mengatur lebar batang
+            categoryPercentage: 0.8,
+            datalabels: {
+                display: true,
+                color: '#fff',
+                font: { weight: 'bold', size: 11 },
+                anchor: 'center',
+                align: 'center',
+            }
+        }, {
+            label: 'Pemakaian BBM %',
+            data: {data_pakai},
+            backgroundColor: 'rgba(255, 99, 132, 0.7)', // Warna Salmon lembut
+            borderRadius: 8,
+            barPercentage: 0.6,
+            categoryPercentage: 0.8,
+            datalabels: {
+                display: true,
+                color: '#444',
+                anchor: 'end',
+                align: 'top',
+                font: { weight: 'bold', size: 10 },
+            }
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            y: {
+                beginAtZero: true,
+                max: 110,
+                grid: {
+                    drawBorder: false,
+                    color: 'rgba(0,0,0,0.05)' // Grid dibuat sangat samar
+                },
+                ticks: { font: { size: 12 } }
+            },
+            x: {
+                grid: { display: false } // Menghilangkan garis vertikal
+            }
+        },
+        plugins: {
+            legend: {
+                position: 'top',
+                labels: { usePointStyle: true, boxWidth: 10 } // Legend jadi lebih rapi
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0,0,0,0.8)', // Tooltip lebih elegan
+                padding: 10,
+                cornerRadius: 6,
+                callbacks: {
+                    afterLabel: function(context) { return infoDetail[context.dataIndex]; }
+                }
+            }
+        }
+    }
+});
+
         </script></body></html>"""
         return html
     except Exception as e:
