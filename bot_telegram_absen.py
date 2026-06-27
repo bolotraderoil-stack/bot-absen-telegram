@@ -122,10 +122,6 @@ def home_genset():
             <div class="chart-container"><canvas id="grafikBBM"></canvas></div>
             {alert_html}
 
-            <div style="overflow-x:auto;">
-                <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
-            </div>
-            
             <div class="filter">
                 <form method="get">
                     <label><b>Filter Bulan:</b></label>
@@ -136,6 +132,11 @@ def home_genset():
                     <a href="/export_genset?bulan={bulan if bulan else ''}" style="padding:8px 12px;background:#4CAF50;color:white;text-decoration:none;border-radius:5px;font-weight:bold;display:inline-block;border:none;">⬇️ Export CSV</a>
                 </form>
             </div>
+
+            <div style="overflow-x:auto;">
+                <table><tr><th>Tanggal</th><th>Mulai</th><th>Selesai</th><th>Durasi</th><th>BBM Awal</th><th>BBM Akhir</th><th>Pakai</th><th>Sisa</th><th>Petugas</th></tr>{rows}</table>
+            </div>
+            
         </div>
 
         <script>
